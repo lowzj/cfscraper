@@ -3,8 +3,12 @@ import time
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
-import cloudscraper
-from requests import Response
+try:
+    import cloudscraper
+    from requests import Response
+    HAS_CLOUDSCRAPER = True
+except ImportError:
+    HAS_CLOUDSCRAPER = False
 
 from app.scrapers.base import BaseScraper, ScraperResult
 from app.core.config import settings
@@ -15,6 +19,8 @@ class CloudScraperScraper(BaseScraper):
     
     def __init__(self, timeout: int = None):
         super().__init__(timeout or settings.cloudscraper_timeout)
+        if not HAS_CLOUDSCRAPER:
+            raise ImportError("cloudscraper is not installed. Install it with: pip install cloudscraper")
         self.session = cloudscraper.create_scraper()
         self.session.timeout = self.timeout
         self.executor = ThreadPoolExecutor(max_workers=1)
@@ -73,8 +79,11 @@ class CloudScraperScraper(BaseScraper):
         headers: Optional[Dict[str, str]],
         data: Optional[Dict[str, Any]],
         params: Optional[Dict[str, str]]
-    ) -> Response:
+    ):
         """Make the actual HTTP request (blocking)"""
+        if not HAS_CLOUDSCRAPER:
+            raise ImportError("cloudscraper is not installed")
+            
         request_kwargs = {
             'url': url,
             'headers': headers or {},
