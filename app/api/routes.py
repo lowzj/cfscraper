@@ -93,6 +93,8 @@ async def create_scrape_job(
             message=f"Job {task_id} queued successfully"
         )
         
+    except HTTPException as http_exc:
+        raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create scraping job: {str(e)}")
 
