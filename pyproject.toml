@@ -1,0 +1,22 @@
+[project]
+name = "cfscraper"
+version = "0.1.0"
+description = "A scraper API server with SeleniumBase, cloudscraper, and FastAPI"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "cloudscraper>=1.2.71",
+    "seleniumbase>=4.21.0",
+    "pydantic>=2.5.0",
+    "requests>=2.31.0",
+    "httpx>=0.28.1",
+]
+
+[project.scripts]
+cfscraper = "cfscraper.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
