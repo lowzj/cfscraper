@@ -131,5 +131,5 @@ class SeleniumScraper(BaseScraper):
         if self.driver:
             try:
                 self.driver.quit()
-            except:
+            except Exception:
                 pass

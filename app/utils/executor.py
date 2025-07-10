@@ -168,7 +168,7 @@ class JobExecutor:
                     JobStatus.FAILED,
                     error=error_msg
                 )
-            except:
+            except Exception:
                 pass  # Ignore errors during error handling
             
             return {

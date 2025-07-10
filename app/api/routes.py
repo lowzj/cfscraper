@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
+from datetime import datetime
 
 from app.core.database import get_db
 from app.models.job import Job, JobStatus, ScraperType
@@ -265,5 +266,3 @@ async def clear_queue():
         raise HTTPException(status_code=500, detail=f"Failed to clear queue: {str(e)}")
 
 
-# Import datetime for job cancellation
-from datetime import datetime
