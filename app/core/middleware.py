@@ -57,7 +57,7 @@ async def cfscraper_exception_handler(request: Request, exc: CFScraperException)
     
     return JSONResponse(
         status_code=exc.status_code,
-        content=error_response.dict()
+        content=error_response.model_dump(mode='json')
     )
 
 
@@ -97,7 +97,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     
     return JSONResponse(
         status_code=exc.status_code,
-        content=error_response.dict()
+        content=error_response.model_dump(mode='json')
     )
 
 
@@ -149,7 +149,7 @@ async def validation_exception_handler(request: Request, exc: ValidationError) -
     
     return JSONResponse(
         status_code=422,
-        content=error_response.dict()
+        content=error_response.model_dump(mode='json')
     )
 
 
@@ -190,7 +190,7 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
     
     return JSONResponse(
         status_code=500,
-        content=error_response.dict()
+        content=error_response.model_dump(mode='json')
     )
 
 

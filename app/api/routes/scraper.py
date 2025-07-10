@@ -63,7 +63,7 @@ async def create_scrape_job(
             'data': request.data or {},
             'params': request.params or {},
             'scraper_type': request.scraper_type,
-            'config': request.config.dict(),
+            'config': request.config.model_dump(),
             'tags': request.tags or [],
             'priority': request.priority,
             'callback_url': str(request.callback_url) if request.callback_url else None
@@ -406,7 +406,7 @@ async def create_bulk_scrape_jobs(
                 'data': job_request.data or {},
                 'params': job_request.params or {},
                 'scraper_type': job_request.scraper_type,
-                'config': job_request.config.dict(),
+                'config': job_request.config.model_dump(),
                 'tags': job_request.tags or [],
                 'priority': job_request.priority,
                 'callback_url': str(job_request.callback_url) if job_request.callback_url else None

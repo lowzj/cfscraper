@@ -14,10 +14,16 @@ from app.models.requests import JobSearchRequest
 from app.models.responses import JobListResponse, JobStatusResponse, JobResult
 from app.utils.queue import JobQueue, create_job_queue
 
-router = APIRouter()
+# Try to import executor, but handle missing dependencies
+try:
+    from app.utils.executor import JobExecutor
+    job_queue = create_job_queue()
+    job_executor = JobExecutor(job_queue)
+except Exception:
+    job_executor = None
+    job_queue = create_job_queue()
 
-# Global job queue
-job_queue = create_job_queue()
+router = APIRouter()
 
 
 @router.get("/", response_model=JobListResponse)
@@ -536,12 +542,18 @@ async def get_queue_status():
     """
     try:
         queue_size = await job_queue.get_queue_size()
-        running_jobs = job_executor.get_running_jobs()
+        
+        if job_executor:
+            running_jobs = job_executor.get_running_jobs()
+            max_concurrent = job_executor.max_concurrent_jobs
+        else:
+            running_jobs = []
+            max_concurrent = 10  # Default value
         
         return {
             'queue_size': queue_size,
             'running_jobs': len(running_jobs),
-            'max_concurrent_jobs': job_executor.max_concurrent_jobs,
+            'max_concurrent_jobs': max_concurrent,
             'running_job_ids': running_jobs,
             'queue_type': 'in-memory' if hasattr(job_queue, 'queue') else 'redis'
         }
