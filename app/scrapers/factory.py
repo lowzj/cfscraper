@@ -19,7 +19,7 @@ class ScraperFactory:
     
     @classmethod
     def create_scraper(
-        self,
+        cls,
         scraper_type: ScraperType,
         timeout: Optional[int] = None,
         **kwargs
@@ -38,10 +38,10 @@ class ScraperFactory:
         Raises:
             ValueError: If scraper type is not supported
         """
-        if scraper_type not in self._scrapers:
+        if scraper_type not in cls._scrapers:
             raise ValueError(f"Unsupported scraper type: {scraper_type}")
         
-        scraper_class = self._scrapers[scraper_type]
+        scraper_class = cls._scrapers[scraper_type]
         
         # Create scraper with appropriate arguments
         if scraper_type == ScraperType.SELENIUM:
