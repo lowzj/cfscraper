@@ -1,6 +1,1 @@
-def main():
-    print("Hello from cfscraper!")
-
-
-if __name__ == "__main__":
-    main()
+# File removed as it duplicates functionality in app/main.py and is not referenced by tests or documentation.
