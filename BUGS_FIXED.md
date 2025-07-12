@@ -175,6 +175,46 @@ job = Job(
 )
 ```
 
+## Bug #9: Database Session Resource Leak in Health Endpoints
+**File:** `app/api/routes/health.py`
+**Severity:** Critical
+**Description:** Multiple health and metrics endpoints were using `next(get_db())` directly instead of FastAPI's dependency injection system. This bypassed automatic session management, causing database connections to never be closed, leading to resource exhaustion and potential connection pool depletion.
+
+**Affected Lines:** 77, 158, 225, and 350
+**Affected Functions:**
+- `detailed_health_check()` (2 instances)
+- `get_metrics()`
+- `get_service_status()`
+
+**Fix:** 
+- Added proper FastAPI dependency injection using `db: Session = Depends(get_db)`
+- Added required imports: `Depends` from FastAPI and `Session` from SQLAlchemy
+- Removed all direct `next(get_db())` calls
+- Ensured automatic session lifecycle management by FastAPI
+
+**Code Changes:**
+```python
+# Added imports
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.orm import Session
+
+# OLD (resource leak):
+async def detailed_health_check():
+    db = next(get_db())  # ❌ Manual session creation, never closed
+    # ... use db ...
+
+# NEW (proper dependency injection):
+async def detailed_health_check(db: Session = Depends(get_db)):
+    # ✅ FastAPI automatically manages session lifecycle
+    # ... use db ...
+```
+
+**Impact:**
+- **Resource Management**: Database sessions now properly closed automatically
+- **Connection Pool**: Prevents connection pool exhaustion
+- **Memory Leaks**: Eliminates session-related memory leaks
+- **Production Stability**: Prevents resource exhaustion under load
+
 ## Impact Assessment
 
 ### Before Fixes:
@@ -225,3 +265,6 @@ The codebase is now free of **8 total critical bugs** and follows production-rea
 - ✅ Complete rollback on enqueue failures prevents orphaned jobs
 - ✅ Full database/queue data consistency
 - ✅ Proper error handling with meaningful error messages
+
+## Updated Final Status
+The codebase is now free of **9 total critical bugs** including resource management issues and follows production-ready best practices for database connection handling.

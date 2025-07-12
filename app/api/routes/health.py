@@ -1,8 +1,9 @@
 """
 Health check and monitoring endpoints
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 from typing import Dict, Any
 import time
 import asyncio
@@ -56,7 +57,7 @@ async def health_check():
 
 
 @router.get("/detailed", response_model=DetailedHealthCheckResponse)
-async def detailed_health_check():
+async def detailed_health_check(db: Session = Depends(get_db)):
     """
     Detailed health check endpoint
     
@@ -74,7 +75,6 @@ async def detailed_health_check():
         
         # Check database connection
         try:
-            db = next(get_db())
             start_time = time.time()
             result = db.execute(text("SELECT 1")).fetchone()
             db_response_time = time.time() - start_time
@@ -155,8 +155,6 @@ async def detailed_health_check():
         
         # Get job metrics
         try:
-            db = next(get_db())
-            
             # Get job counts
             total_jobs = db.query(Job).count()
             active_jobs = db.query(Job).filter(Job.status == JobStatus.RUNNING).count()
@@ -211,7 +209,7 @@ async def detailed_health_check():
 
 
 @router.get("/metrics", response_model=MetricsResponse)
-async def get_metrics():
+async def get_metrics(db: Session = Depends(get_db)):
     """
     Get system and application metrics
     
@@ -222,7 +220,6 @@ async def get_metrics():
         MetricsResponse with detailed metrics
     """
     try:
-        db = next(get_db())
         job_queue = get_job_queue()
         
         # Job statistics
@@ -336,7 +333,7 @@ async def get_metrics():
 
 
 @router.get("/status")
-async def get_service_status():
+async def get_service_status(db: Session = Depends(get_db)):
     """
     Get service status summary
     
@@ -347,7 +344,6 @@ async def get_service_status():
         Service status summary
     """
     try:
-        db = next(get_db())
         job_queue = get_job_queue()
         
         # Basic service info
