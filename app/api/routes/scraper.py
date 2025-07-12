@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import io
 import json
@@ -98,7 +98,7 @@ async def create_scrape_job(
             scraper_type=request.scraper_type,
             max_retries=request.config.max_retries,
             status=JobStatus.QUEUED,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
         
         db.add(job)
@@ -113,7 +113,7 @@ async def create_scrape_job(
             task_id=job_id,
             status=JobStatus.QUEUED,
             message=f"Job {job_id} queued successfully",
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
         
     except Exception as e:
@@ -278,7 +278,7 @@ async def cancel_job(
         
         # Update job in database
         job.status = JobStatus.CANCELLED
-        job.completed_at = datetime.utcnow()
+        job.completed_at = datetime.now(timezone.utc)
         db.commit()
         
         return {'message': f'Job {job_id} cancelled successfully'}
@@ -345,7 +345,7 @@ async def create_bulk_scrape_jobs(
                 scraper_type=job_request.scraper_type,
                 max_retries=job_request.config.max_retries,
                 status=JobStatus.QUEUED,
-                created_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc)
             )
             
             db.add(job)
@@ -360,7 +360,7 @@ async def create_bulk_scrape_jobs(
             job_ids=job_ids,
             total_jobs=len(job_ids),
             status="queued",
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
         
     except Exception as e:

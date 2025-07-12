@@ -78,6 +78,44 @@ def __del__(self):
             pass
 ```
 
+## Bug #5: Deprecated datetime.utcnow() Usage in jobs.py
+**File:** `app/api/routes/jobs.py`
+**Severity:** Medium
+**Description:** The code was using `datetime.utcnow()` which is deprecated in Python 3.12. This would cause deprecation warnings and potential future compatibility issues.
+
+**Fix:** 
+- Added `timezone` import to the datetime import statement
+- Replaced all instances of `datetime.utcnow()` with `datetime.now(timezone.utc)`
+
+**Code Changes:**
+```python
+# Import changes
+from datetime import datetime, timedelta, timezone
+
+# Line 256: Changed job completion timestamp
+job.completed_at = datetime.now(timezone.utc)  # Was: datetime.utcnow()
+
+# Line 365: Changed stats date range calculation  
+end_date = datetime.now(timezone.utc)  # Was: datetime.utcnow()
+```
+
+## Bug #6: Deprecated datetime.utcnow() Usage in Additional Files
+**Files:** `app/api/routes/scraper.py`, `app/api/routes/health.py`, `app/core/middleware.py`
+**Severity:** Medium
+**Description:** Found additional instances of deprecated `datetime.utcnow()` usage across multiple files that needed to be updated for Python 3.12 compatibility.
+
+**Fix:** 
+- Added `timezone` import to datetime imports in all affected files
+- Replaced all 26 instances of `datetime.utcnow()` with `datetime.now(timezone.utc)` across:
+  - `app/api/routes/scraper.py` (5 instances)
+  - `app/api/routes/health.py` (14 instances) 
+  - `app/core/middleware.py` (7 instances)
+
+**Impact:**
+- All datetime operations now use timezone-aware UTC timestamps
+- Full compatibility with Python 3.12+
+- No deprecation warnings in production
+
 ## Impact Assessment
 
 ### Before Fixes:
@@ -101,3 +139,17 @@ All fixed files have been verified to compile successfully with Python 3:
 - `app/scrapers/selenium_scraper.py` ✅
 
 The codebase is now free of these critical bugs and should run without the identified issues.
+
+## Updated Impact Assessment
+
+### Before Latest Fix:
+- ❌ Deprecated datetime.utcnow() usage causing warnings in Python 3.12
+- ❌ Potential future compatibility issues
+
+### After Latest Fix:
+- ✅ All datetime operations use modern timezone-aware methods
+- ✅ Full compatibility with Python 3.12+
+- ✅ No deprecation warnings
+
+## Final Status
+The codebase is now free of all identified critical bugs and follows Python 3.12 best practices.
