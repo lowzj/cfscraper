@@ -81,7 +81,7 @@ class ScraperFactory:
         if scraper_type == ScraperType.SELENIUM:
             return scraper_class(timeout=timeout, **kwargs)
         else:
-            return scraper_class(timeout=timeout)
+            return scraper_class(timeout=timeout, **kwargs)
     
     @classmethod
     def get_available_scrapers(cls) -> list[str]:
