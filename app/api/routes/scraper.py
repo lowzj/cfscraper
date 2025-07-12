@@ -34,6 +34,20 @@ from .common import (
 router = APIRouter()
 
 
+class CustomJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles datetime and other non-serializable objects"""
+    
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        elif hasattr(obj, '__dict__'):
+            return obj.__dict__
+        elif hasattr(obj, 'to_dict'):
+            return obj.to_dict()
+        else:
+            return str(obj)
+
+
 @router.post("/", response_model=ScrapeResponse)
 async def create_scrape_job(
     request: ScrapeRequest,
@@ -170,7 +184,7 @@ async def get_job_result(
         raise handle_route_exception(e, "get job result")
 
 
-@router.get("/{job_id}/download", response_model=DownloadResponse)
+@router.get("/{job_id}/download")
 async def get_job_download(
     job_id: str,
     format: str = "html",
@@ -179,7 +193,7 @@ async def get_job_download(
     """
     Download job result as a file
     
-    Provides a download link or direct download of the job result in various formats.
+    Provides a direct download of the job result in various formats.
     
     Args:
         job_id: The job ID to download results for
@@ -187,7 +201,7 @@ async def get_job_download(
         db: Database session
         
     Returns:
-        DownloadResponse with download information
+        StreamingResponse with the file content
     """
     try:
         # Get job from database
@@ -203,7 +217,8 @@ async def get_job_download(
             filename = f"{job_id}.html"
             content_type = "text/html"
         elif format.lower() == "json":
-            content = json.dumps(job.result, indent=2)
+            # Use custom JSON encoder to handle datetime and other non-serializable objects
+            content = json.dumps(job.result, indent=2, cls=CustomJSONEncoder)
             filename = f"{job_id}.json"
             content_type = "application/json"
         elif format.lower() == "txt":
