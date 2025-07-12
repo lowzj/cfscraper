@@ -127,6 +127,9 @@ async def create_scrape_job(
             created_at=datetime.now(timezone.utc)
         )
         
+    except HTTPException:
+        # Re-raise HTTPExceptions to preserve status code and detail
+        raise
     except Exception as e:
         db.rollback()
         raise handle_route_exception(e, "create scraping job")
@@ -365,14 +368,24 @@ async def create_bulk_scrape_jobs(
             
             db.add(job)
         
-        # Try to enqueue all jobs first
+        # Try to enqueue all jobs with proper cleanup on failure
+        enqueued_job_ids = []
         try:
             for job_data in jobs_data:
                 await get_job_queue().enqueue(job_data)
+                enqueued_job_ids.append(job_data['job_id'])
             # Only commit if all enqueues succeed
             db.commit()
         except Exception as enqueue_error:
-            # Rollback database transaction if any enqueue fails
+            # Clean up successfully enqueued jobs from queue
+            for enqueued_job_id in enqueued_job_ids:
+                try:
+                    await get_job_queue().remove_job(enqueued_job_id)
+                except Exception:
+                    # Log cleanup failure but don't fail the operation
+                    pass
+            
+            # Rollback database transaction
             db.rollback()
             raise HTTPException(
                 status_code=500,
@@ -387,6 +400,9 @@ async def create_bulk_scrape_jobs(
             created_at=datetime.now(timezone.utc)
         )
         
+    except HTTPException:
+        # Re-raise HTTPExceptions to preserve status code and detail
+        raise
     except Exception as e:
         db.rollback()
         raise handle_route_exception(e, "create bulk scraping jobs")

@@ -72,6 +72,19 @@ class JobQueue(ABC):
     async def clear_queue(self):
         """Clear all jobs from the queue"""
         pass
+    
+    @abstractmethod
+    async def remove_job(self, task_id: str) -> bool:
+        """
+        Remove a specific job from the queue
+        
+        Args:
+            task_id: The task ID to remove
+            
+        Returns:
+            True if job was removed, False if not found
+        """
+        pass
 
 
 class InMemoryJobQueue(JobQueue):
@@ -105,11 +118,15 @@ class InMemoryJobQueue(JobQueue):
         try:
             job_info = await asyncio.wait_for(self._queue.get(), timeout=1.0)
             
-            # Update status to running
+            # Check if job was removed (cleanup scenario)
             async with self._lock:
-                if job_info['task_id'] in self._jobs:
-                    self._jobs[job_info['task_id']]['status'] = JobStatus.RUNNING
-                    self._jobs[job_info['task_id']]['started_at'] = datetime.now().isoformat()
+                if job_info['task_id'] not in self._jobs:
+                    # Job was removed, skip it and try again
+                    return await self.dequeue()
+                
+                # Update status to running
+                self._jobs[job_info['task_id']]['status'] = JobStatus.RUNNING
+                self._jobs[job_info['task_id']]['started_at'] = datetime.now().isoformat()
             
             return job_info
             
@@ -145,6 +162,18 @@ class InMemoryJobQueue(JobQueue):
                 except asyncio.QueueEmpty:
                     break
             self._jobs.clear()
+    
+    async def remove_job(self, task_id: str) -> bool:
+        """Remove a specific job from the in-memory queue"""
+        async with self._lock:
+            if task_id in self._jobs:
+                # Remove from jobs tracking
+                del self._jobs[task_id]
+                
+                # Note: For in-memory queue, we can't easily remove from the asyncio.Queue
+                # The job will be skipped when dequeued since it's no longer in _jobs
+                return True
+            return False
     
     def get_all_jobs(self) -> Dict[str, Dict[str, Any]]:
         """Get all jobs (for debugging)"""
@@ -211,6 +240,12 @@ class RedisJobQueue(JobQueue):
             job_info = json.loads(job_data[1])
             task_id = job_info['task_id']
             
+            # Check if job was removed (cleanup scenario)
+            job_exists = await redis_client.exists(f"{self.status_key_prefix}{task_id}")
+            if not job_exists:
+                # Job was removed, skip it and try again
+                return await self.dequeue()
+            
             # Update status to running
             await redis_client.hset(
                 f"{self.status_key_prefix}{task_id}",
@@ -273,6 +308,28 @@ class RedisJobQueue(JobQueue):
                 await redis_client.delete(*keys)
         except Exception as e:
             logger.error(f"Error clearing Redis queue: {str(e)}")
+    
+    async def remove_job(self, task_id: str) -> bool:
+        """Remove a specific job from Redis queue"""
+        try:
+            redis_client = await self._get_redis_client()
+            
+            # Remove job status
+            status_deleted = await redis_client.delete(f"{self.status_key_prefix}{task_id}")
+            
+            # Remove from queue (this is complex since Redis lists don't have direct remove by value)
+            # We'll mark the job as cancelled in case it's still in the queue
+            if status_deleted:
+                await redis_client.hset(
+                    f"{self.status_key_prefix}{task_id}_removed",
+                    mapping={'status': JobStatus.CANCELLED, 'removed_at': datetime.now().isoformat()}
+                )
+                return True
+            
+            return False
+        except Exception as e:
+            logger.error(f"Error removing job from Redis: {str(e)}")
+            return False
 
 
 def create_job_queue() -> JobQueue:
