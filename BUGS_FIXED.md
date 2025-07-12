@@ -275,6 +275,71 @@ async def remove_job(self, task_id: str) -> bool:
 - **Resource Management**: Failed batch operations properly cleaned up
 - **Production Stability**: Eliminates untrackable zombie jobs
 
+## Bug #11: Queue Reliability Issues
+**File:** `app/utils/queue.py`
+**Severity:** Critical
+**Description:** Three critical reliability issues in the job queue implementations that could cause deadlocks, stack overflow, and timezone inconsistencies.
+
+**Issues Fixed:**
+
+**1. Deadlock Risk in InMemoryQueue.dequeue()**
+- **Problem**: Recursive call `return await self.dequeue()` inside `async with self._lock:` could cause deadlock
+- **Impact**: Could hang the entire queue processing system
+
+**2. Stack Overflow Risk in RedisJobQueue.dequeue()**
+- **Problem**: Recursive retry `return await self.dequeue()` could exhaust call stack under high skip rates
+- **Impact**: Application crash with many consecutive removed jobs
+
+**3. Timezone Inconsistency**
+- **Problem**: Using `datetime.now()` instead of `datetime.now(timezone.utc)`
+- **Impact**: Inconsistent timestamp handling across the application
+
+**Fix Applied:**
+
+**1. Iterative Retry Pattern:**
+```python
+# ❌ Before (Dangerous Recursion):
+async def dequeue(self):
+    job_info = await self._queue.get()
+    async with self._lock:
+        if job_info['task_id'] not in self._jobs:
+            return await self.dequeue()  # ❌ Recursive call inside lock!
+
+# ✅ After (Safe Iteration):
+async def dequeue(self):
+    max_retries = 100  # Prevent infinite loops
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        job_info = await self._queue.get()
+        async with self._lock:
+            if job_info['task_id'] not in self._jobs:
+                retry_count += 1
+                continue  # ✅ Safe iteration, no recursion
+        return job_info
+```
+
+**2. UTC Timezone Consistency:**
+```python
+# ❌ Before:
+'created_at': datetime.now().isoformat()
+
+# ✅ After:
+'created_at': datetime.now(timezone.utc).isoformat()
+```
+
+**3. Max Retry Protection:**
+- Added `max_retries = 100` limit to prevent infinite loops
+- Added warning logs when retry limits are hit
+- Graceful degradation instead of crashes
+
+**Impact:**
+- **Deadlock Prevention**: Eliminated lock recursion in InMemoryQueue
+- **Stack Safety**: Replaced recursion with iteration in both queue types
+- **Timezone Consistency**: All timestamps now use UTC
+- **Resilience**: Added retry limits and graceful failure handling
+- **Production Stability**: Queue processing can't hang or crash from these issues
+
 ## Impact Assessment
 
 ### Before Fixes:
@@ -308,6 +373,9 @@ The codebase is now free of these critical bugs and should run without the ident
 - ❌ Database session resource leaks in health endpoints
 - ❌ Bulk job creation could create orphaned queue entries
 - ❌ Exception details lost in generic error handlers
+- ❌ Queue deadlock risks from recursive calls inside locks
+- ❌ Stack overflow potential from unbounded recursion
+- ❌ Timezone inconsistencies in queue timestamps
 
 ### After Latest Fixes:
 - ✅ Atomic job creation with proper transaction ordering
@@ -317,6 +385,9 @@ The codebase is now free of these critical bugs and should run without the ident
 - ✅ Database sessions automatically managed by FastAPI
 - ✅ Bulk operations are truly atomic with proper cleanup
 - ✅ No more orphaned jobs or zombie processes
+- ✅ Queue processing immune to deadlocks and stack overflow
+- ✅ Consistent UTC timestamps across all components
+- ✅ Resilient queue operations with retry limits and graceful degradation
 
 ## Final Status (Updated)
-The codebase is now free of **10 total critical bugs** including complex transaction consistency issues and follows production-ready best practices for distributed job processing.
+The codebase is now free of **11 total critical bugs** including fundamental queue reliability issues and follows production-ready best practices for concurrent job processing.
