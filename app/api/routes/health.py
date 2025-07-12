@@ -12,7 +12,7 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.models.job import Job, JobStatus
 from app.models.responses import HealthCheckResponse, DetailedHealthCheckResponse, MetricsResponse
-from app.utils.queue import create_job_queue
+from .common import get_job_queue
 
 # Try to import psutil for system metrics
 try:
@@ -98,9 +98,9 @@ async def detailed_health_check():
         
         # Check Redis/Queue connection
         try:
-            job_queue = create_job_queue()
+            job_queue = get_job_queue()
             start_time = time.time()
-            queue_size = await job_queue.get_queue_size()
+            queue_size = await get_job_queue().get_queue_size()
             queue_response_time = time.time() - start_time
             
             components["queue"] = {
@@ -185,7 +185,7 @@ async def detailed_health_check():
                 "active_jobs": active_jobs,
                 "completed_jobs": completed_jobs,
                 "failed_jobs": failed_jobs,
-                "queue_size": await job_queue.get_queue_size(),
+                "queue_size": await get_job_queue().get_queue_size(),
                 "average_response_time": avg_response_time
             }
             
@@ -223,7 +223,7 @@ async def get_metrics():
     """
     try:
         db = next(get_db())
-        job_queue = create_job_queue()
+        job_queue = get_job_queue()
         
         # Job statistics
         jobs_stats = {}
@@ -348,7 +348,7 @@ async def get_service_status():
     """
     try:
         db = next(get_db())
-        job_queue = create_job_queue()
+        job_queue = get_job_queue()
         
         # Basic service info
         uptime = time.time() - _start_time

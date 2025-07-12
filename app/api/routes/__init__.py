@@ -17,3 +17,8 @@ api_router.include_router(health_router, prefix="/health", tags=["health"])
 
 # Re-export for backward compatibility
 router = api_router
+
+# Re-export common utilities
+from . import common
+
+__all__ = ["api_router", "router", "common"]

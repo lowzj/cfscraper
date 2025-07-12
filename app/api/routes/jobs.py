@@ -12,16 +12,13 @@ from app.core.database import get_db
 from app.models.job import Job, JobStatus, ScraperType
 from app.models.requests import JobSearchRequest
 from app.models.responses import JobListResponse, JobStatusResponse, JobResult
-from app.utils.queue import JobQueue, create_job_queue
-
-# Try to import executor, but handle missing dependencies
-try:
-    from app.utils.executor import JobExecutor
-    job_queue = create_job_queue()
-    job_executor = JobExecutor(job_queue)
-except Exception:
-    job_executor = None
-    job_queue = create_job_queue()
+from .common import (
+    get_job_queue,
+    get_job_executor,
+    build_job_result,
+    build_job_status_response,
+    handle_route_exception
+)
 
 router = APIRouter()
 
@@ -105,43 +102,7 @@ async def list_jobs(
         # Convert to response format
         job_responses = []
         for job in jobs:
-            # Build result
-            result = None
-            if job.result:
-                result = JobResult(
-                    status_code=job.result.get('status_code'),
-                    response_time=job.result.get('response_time'),
-                    content_length=job.result.get('content_length'),
-                    content_type=job.result.get('content_type'),
-                    headers=job.result.get('headers', {}),
-                    content=job.result.get('content'),
-                    text=job.result.get('text'),
-                    links=job.result.get('links', []),
-                    images=job.result.get('images', []),
-                    final_url=job.result.get('final_url'),
-                    screenshot_url=job.result.get('screenshot_url'),
-                    error_message=job.result.get('error_message'),
-                    error_type=job.result.get('error_type')
-                )
-            
-            job_response = JobStatusResponse(
-                job_id=job.task_id,
-                task_id=job.task_id,
-                status=job.status,
-                progress=job.progress,
-                progress_message=job.progress_message,
-                url=job.url,
-                method=job.method,
-                scraper_type=job.scraper_type,
-                created_at=job.created_at,
-                started_at=job.started_at,
-                completed_at=job.completed_at,
-                result=result,
-                error_message=job.error_message,
-                retry_count=job.retry_count,
-                tags=job.result.get('tags', []) if job.result else [],
-                priority=job.result.get('priority', 0) if job.result else 0
-            )
+            job_response = build_job_status_response(job)
             job_responses.append(job_response)
         
         # Calculate pagination info
@@ -160,10 +121,7 @@ async def list_jobs(
         )
         
     except Exception as e:
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to list jobs: {str(e)}"
-        )
+        raise handle_route_exception(e, "list jobs")
 
 
 @router.post("/search", response_model=JobListResponse)
@@ -242,43 +200,7 @@ async def search_jobs(
         # Convert to response format
         job_responses = []
         for job in jobs:
-            # Build result
-            result = None
-            if job.result:
-                result = JobResult(
-                    status_code=job.result.get('status_code'),
-                    response_time=job.result.get('response_time'),
-                    content_length=job.result.get('content_length'),
-                    content_type=job.result.get('content_type'),
-                    headers=job.result.get('headers', {}),
-                    content=job.result.get('content'),
-                    text=job.result.get('text'),
-                    links=job.result.get('links', []),
-                    images=job.result.get('images', []),
-                    final_url=job.result.get('final_url'),
-                    screenshot_url=job.result.get('screenshot_url'),
-                    error_message=job.result.get('error_message'),
-                    error_type=job.result.get('error_type')
-                )
-            
-            job_response = JobStatusResponse(
-                job_id=job.task_id,
-                task_id=job.task_id,
-                status=job.status,
-                progress=job.progress,
-                progress_message=job.progress_message,
-                url=job.url,
-                method=job.method,
-                scraper_type=job.scraper_type,
-                created_at=job.created_at,
-                started_at=job.started_at,
-                completed_at=job.completed_at,
-                result=result,
-                error_message=job.error_message,
-                retry_count=job.retry_count,
-                tags=job.result.get('tags', []) if job.result else [],
-                priority=job.result.get('priority', 0) if job.result else 0
-            )
+            job_response = build_job_status_response(job)
             job_responses.append(job_response)
         
         # Calculate pagination info
@@ -296,13 +218,8 @@ async def search_jobs(
             has_previous=has_previous
         )
         
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to search jobs: {str(e)}"
-        )
+        raise handle_route_exception(e, "search jobs")
 
 
 @router.post("/bulk/cancel")
@@ -342,7 +259,7 @@ async def cancel_bulk_jobs(
             if job.status in [JobStatus.QUEUED, JobStatus.RUNNING]:
                 try:
                     # Update job status in queue
-                    await job_queue.update_job_status(job.task_id, JobStatus.CANCELLED)
+                    await get_job_queue().update_job_status(job.task_id, JobStatus.CANCELLED)
                     
                     # Update job in database
                     job.status = JobStatus.CANCELLED
@@ -421,7 +338,7 @@ async def delete_bulk_jobs(
             if force or job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
                 try:
                     # Remove from queue if still there
-                    await job_queue.remove_job(job.task_id)
+                    await get_job_queue().remove_job(job.task_id)
                     
                     # Delete from database
                     db.delete(job)
@@ -541,11 +458,12 @@ async def get_queue_status():
         Queue status information
     """
     try:
-        queue_size = await job_queue.get_queue_size()
+        queue_size = await get_job_queue().get_queue_size()
         
-        if job_executor:
-            running_jobs = job_executor.get_running_jobs()
-            max_concurrent = job_executor.max_concurrent_jobs
+        executor = get_job_executor()
+        if executor:
+            running_jobs = executor.get_running_jobs()
+            max_concurrent = executor.max_concurrent_jobs
         else:
             running_jobs = []
             max_concurrent = 10  # Default value
@@ -555,7 +473,7 @@ async def get_queue_status():
             'running_jobs': len(running_jobs),
             'max_concurrent_jobs': max_concurrent,
             'running_job_ids': running_jobs,
-            'queue_type': 'in-memory' if hasattr(job_queue, 'queue') else 'redis'
+            'queue_type': 'in-memory' if hasattr(get_job_queue(), 'queue') else 'redis'
         }
         
     except Exception as e:
@@ -576,7 +494,7 @@ async def clear_queue():
         Success message
     """
     try:
-        await job_queue.clear_queue()
+        await get_job_queue().clear_queue()
         return {'message': 'Queue cleared successfully'}
         
     except Exception as e:

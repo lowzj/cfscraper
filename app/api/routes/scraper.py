@@ -20,14 +20,18 @@ from app.models.responses import (
     BulkScrapeResponse,
     DownloadResponse
 )
-from app.utils.queue import JobQueue, create_job_queue
-from app.utils.executor import JobExecutor
+from .common import (
+    get_job_queue, 
+    get_job_executor,
+    build_job_result,
+    build_job_status_response,
+    get_job_by_id,
+    validate_job_completed,
+    validate_job_has_result,
+    handle_route_exception
+)
 
 router = APIRouter()
-
-# Global job queue and executor
-job_queue = create_job_queue()
-job_executor = JobExecutor(job_queue)
 
 
 @router.post("/", response_model=ScrapeResponse)
@@ -88,7 +92,7 @@ async def create_scrape_job(
         db.refresh(job)
         
         # Enqueue job
-        await job_queue.enqueue(job_data)
+        await get_job_queue().enqueue(job_data)
         
         return ScrapeResponse(
             job_id=job_id,
@@ -100,10 +104,7 @@ async def create_scrape_job(
         
     except Exception as e:
         db.rollback()
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to create scraping job: {str(e)}"
-        )
+        raise handle_route_exception(e, "create scraping job")
 
 
 @router.get("/{job_id}", response_model=JobStatusResponse)
@@ -126,58 +127,15 @@ async def get_job_status(
     """
     try:
         # Get job from database
-        job = db.query(Job).filter(Job.task_id == job_id).first()
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
+        job = get_job_by_id(job_id, db)
         
         # Check queue status
-        queue_status = await job_queue.get_job_status(job_id)
+        queue_status = await get_job_queue().get_job_status(job_id)
         
-        # Build result
-        result = None
-        if job.result:
-            result = JobResult(
-                status_code=job.result.get('status_code'),
-                response_time=job.result.get('response_time'),
-                content_length=job.result.get('content_length'),
-                content_type=job.result.get('content_type'),
-                headers=job.result.get('headers', {}),
-                content=job.result.get('content'),
-                text=job.result.get('text'),
-                links=job.result.get('links', []),
-                images=job.result.get('images', []),
-                final_url=job.result.get('final_url'),
-                screenshot_url=job.result.get('screenshot_url'),
-                error_message=job.result.get('error_message'),
-                error_type=job.result.get('error_type')
-            )
+        return build_job_status_response(job, queue_status)
         
-        return JobStatusResponse(
-            job_id=job_id,
-            task_id=job_id,
-            status=queue_status or job.status,
-            progress=job.progress,
-            progress_message=job.progress_message,
-            url=job.url,
-            method=job.method,
-            scraper_type=job.scraper_type,
-            created_at=job.created_at,
-            started_at=job.started_at,
-            completed_at=job.completed_at,
-            result=result,
-            error_message=job.error_message,
-            retry_count=job.retry_count,
-            tags=job.result.get('tags', []) if job.result else [],
-            priority=job.result.get('priority', 0) if job.result else 0
-        )
-        
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to get job status: {str(e)}"
-        )
+        raise handle_route_exception(e, "get job status")
 
 
 @router.get("/{job_id}/result", response_model=JobResult)
@@ -200,45 +158,16 @@ async def get_job_result(
     """
     try:
         # Get job from database
-        job = db.query(Job).filter(Job.task_id == job_id).first()
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
+        job = get_job_by_id(job_id, db)
         
-        if job.status != JobStatus.COMPLETED:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Job is not completed. Current status: {job.status}"
-            )
+        # Validate job status and result
+        validate_job_completed(job)
+        validate_job_has_result(job)
         
-        if not job.result:
-            raise HTTPException(
-                status_code=404, 
-                detail="Job result not found"
-            )
+        return build_job_result(job.result)
         
-        return JobResult(
-            status_code=job.result.get('status_code'),
-            response_time=job.result.get('response_time'),
-            content_length=job.result.get('content_length'),
-            content_type=job.result.get('content_type'),
-            headers=job.result.get('headers', {}),
-            content=job.result.get('content'),
-            text=job.result.get('text'),
-            links=job.result.get('links', []),
-            images=job.result.get('images', []),
-            final_url=job.result.get('final_url'),
-            screenshot_url=job.result.get('screenshot_url'),
-            error_message=job.result.get('error_message'),
-            error_type=job.result.get('error_type')
-        )
-        
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to get job result: {str(e)}"
-        )
+        raise handle_route_exception(e, "get job result")
 
 
 @router.get("/{job_id}/download", response_model=DownloadResponse)
@@ -262,21 +191,11 @@ async def get_job_download(
     """
     try:
         # Get job from database
-        job = db.query(Job).filter(Job.task_id == job_id).first()
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
+        job = get_job_by_id(job_id, db)
         
-        if job.status != JobStatus.COMPLETED:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Job is not completed. Current status: {job.status}"
-            )
-        
-        if not job.result:
-            raise HTTPException(
-                status_code=404, 
-                detail="Job result not found"
-            )
+        # Validate job status and result
+        validate_job_completed(job)
+        validate_job_has_result(job)
         
         # Determine content and filename based on format
         if format.lower() == "html":
@@ -308,13 +227,8 @@ async def get_job_download(
             }
         )
         
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to download job result: {str(e)}"
-        )
+        raise handle_route_exception(e, "download job result")
 
 
 @router.delete("/{job_id}")
@@ -336,9 +250,7 @@ async def cancel_job(
     """
     try:
         # Get job from database
-        job = db.query(Job).filter(Job.task_id == job_id).first()
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
+        job = get_job_by_id(job_id, db)
         
         if job.status in [JobStatus.COMPLETED, JobStatus.CANCELLED]:
             raise HTTPException(
@@ -347,7 +259,7 @@ async def cancel_job(
             )
         
         # Update job status in queue
-        await job_queue.update_job_status(job_id, JobStatus.CANCELLED)
+        await get_job_queue().update_job_status(job_id, JobStatus.CANCELLED)
         
         # Update job in database
         job.status = JobStatus.CANCELLED
@@ -356,14 +268,9 @@ async def cancel_job(
         
         return {'message': f'Job {job_id} cancelled successfully'}
         
-    except HTTPException:
-        raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to cancel job: {str(e)}"
-        )
+        raise handle_route_exception(e, "cancel job")
 
 
 @router.post("/bulk", response_model=BulkScrapeResponse)
@@ -429,7 +336,7 @@ async def create_bulk_scrape_jobs(
             db.add(job)
             
             # Enqueue job
-            await job_queue.enqueue(job_data)
+            await get_job_queue().enqueue(job_data)
         
         db.commit()
         
@@ -443,7 +350,4 @@ async def create_bulk_scrape_jobs(
         
     except Exception as e:
         db.rollback()
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to create bulk scraping jobs: {str(e)}"
-        )
+        raise handle_route_exception(e, "create bulk scraping jobs")

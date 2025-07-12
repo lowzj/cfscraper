@@ -44,13 +44,6 @@ setup_exception_handlers(app)
 from app.api.routes import api_router
 app.include_router(api_router, prefix="/api/v1")
 
-# Keep backward compatibility with old routes
-try:
-    from app.api.routes import router as old_router
-    app.include_router(old_router, prefix="/api/v1", tags=["legacy"])
-except ImportError:
-    pass
-
 
 @app.get("/")
 async def root():
