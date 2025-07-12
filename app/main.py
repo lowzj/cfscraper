@@ -1,9 +1,11 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.core.database import init_db
+from app.core.middleware import setup_exception_handlers, log_requests
 
 
 @asynccontextmanager
@@ -23,8 +25,23 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Setup CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure appropriately for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add request logging middleware
+app.middleware("http")(log_requests)
+
+# Setup exception handlers
+setup_exception_handlers(app)
+
 # Import and include API routes
-from app.api.routes import router as api_router
+from app.api.routes import api_router
 app.include_router(api_router, prefix="/api/v1")
 
 

@@ -4,7 +4,7 @@ import asyncio
 import uuid
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.models.job import Job, JobStatus
 from app.core.config import settings
@@ -72,6 +72,19 @@ class JobQueue(ABC):
     async def clear_queue(self):
         """Clear all jobs from the queue"""
         pass
+    
+    @abstractmethod
+    async def remove_job(self, task_id: str) -> bool:
+        """
+        Remove a specific job from the queue
+        
+        Args:
+            task_id: The task ID to remove
+            
+        Returns:
+            True if job was removed, False if not found
+        """
+        pass
 
 
 class InMemoryJobQueue(JobQueue):
@@ -89,7 +102,7 @@ class InMemoryJobQueue(JobQueue):
         job_info = {
             'task_id': task_id,
             'status': JobStatus.QUEUED,
-            'created_at': datetime.now().isoformat(),
+            'created_at': datetime.now(timezone.utc).isoformat(),
             'data': job_data
         }
         
@@ -102,19 +115,33 @@ class InMemoryJobQueue(JobQueue):
     
     async def dequeue(self) -> Optional[Dict[str, Any]]:
         """Get the next job from the in-memory queue"""
-        try:
-            job_info = await asyncio.wait_for(self._queue.get(), timeout=1.0)
-            
-            # Update status to running
-            async with self._lock:
-                if job_info['task_id'] in self._jobs:
+        # Use iterative approach to avoid stack overflow and deadlock risks
+        max_retries = 5  # Prevent infinite loops
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                job_info = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+                
+                # Check if job was removed (cleanup scenario) - do this outside the lock first
+                async with self._lock:
+                    if job_info['task_id'] not in self._jobs:
+                        # Job was removed, skip it and try next iteration
+                        retry_count += 1
+                        continue
+                    
+                    # Update status to running
                     self._jobs[job_info['task_id']]['status'] = JobStatus.RUNNING
-                    self._jobs[job_info['task_id']]['started_at'] = datetime.now().isoformat()
-            
-            return job_info
-            
-        except asyncio.TimeoutError:
-            return None
+                    self._jobs[job_info['task_id']]['started_at'] = datetime.now(timezone.utc).isoformat()
+                
+                return job_info
+                
+            except asyncio.TimeoutError:
+                return None
+        
+        # If we hit max retries, log warning and return None
+        logger.warning(f"InMemoryQueue.dequeue hit max retries ({max_retries}) due to removed jobs")
+        return None
     
     async def get_job_status(self, task_id: str) -> Optional[JobStatus]:
         """Get job status from in-memory storage"""
@@ -130,7 +157,7 @@ class InMemoryJobQueue(JobQueue):
                 self._jobs[task_id].update(kwargs)
                 
                 if status in [JobStatus.COMPLETED, JobStatus.FAILED]:
-                    self._jobs[task_id]['completed_at'] = datetime.now().isoformat()
+                    self._jobs[task_id]['completed_at'] = datetime.now(timezone.utc).isoformat()
     
     async def get_queue_size(self) -> int:
         """Get current queue size"""
@@ -145,6 +172,18 @@ class InMemoryJobQueue(JobQueue):
                 except asyncio.QueueEmpty:
                     break
             self._jobs.clear()
+    
+    async def remove_job(self, task_id: str) -> bool:
+        """Remove a specific job from the in-memory queue"""
+        async with self._lock:
+            if task_id in self._jobs:
+                # Remove from jobs tracking
+                del self._jobs[task_id]
+                
+                # Note: For in-memory queue, we can't easily remove from the asyncio.Queue
+                # The job will be skipped when dequeued since it's no longer in _jobs
+                return True
+            return False
     
     def get_all_jobs(self) -> Dict[str, Dict[str, Any]]:
         """Get all jobs (for debugging)"""
@@ -184,7 +223,7 @@ class RedisJobQueue(JobQueue):
         job_info = {
             'task_id': task_id,
             'status': JobStatus.QUEUED,
-            'created_at': datetime.now().isoformat(),
+            'created_at': datetime.now(timezone.utc).isoformat(),
             'data': job_data
         }
         
@@ -200,31 +239,47 @@ class RedisJobQueue(JobQueue):
     
     async def dequeue(self) -> Optional[Dict[str, Any]]:
         """Get the next job from Redis queue"""
-        try:
-            redis_client = await self._get_redis_client()
-            
-            # Pop job from queue
-            job_data = await redis_client.blpop(self.queue_key, timeout=1)
-            if not job_data:
+        # Use iterative approach to avoid stack overflow with high skip rates
+        max_retries = 5  # Prevent infinite loops
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                redis_client = await self._get_redis_client()
+                
+                # Pop job from queue
+                job_data = await redis_client.blpop(self.queue_key, timeout=1)
+                if not job_data:
+                    return None
+                
+                job_info = json.loads(job_data[1])
+                task_id = job_info['task_id']
+                
+                # Check if job was removed (cleanup scenario)
+                job_exists = await redis_client.exists(f"{self.status_key_prefix}{task_id}")
+                if not job_exists:
+                    # Job was removed, skip it and try next iteration
+                    retry_count += 1
+                    continue
+                
+                # Update status to running
+                await redis_client.hset(
+                    f"{self.status_key_prefix}{task_id}",
+                    mapping={
+                        'status': JobStatus.RUNNING,
+                        'started_at': datetime.now(timezone.utc).isoformat()
+                    }
+                )
+                
+                return job_info
+                
+            except Exception as e:
+                logger.error(f"Error dequeuing from Redis: {str(e)}")
                 return None
-            
-            job_info = json.loads(job_data[1])
-            task_id = job_info['task_id']
-            
-            # Update status to running
-            await redis_client.hset(
-                f"{self.status_key_prefix}{task_id}",
-                mapping={
-                    'status': JobStatus.RUNNING,
-                    'started_at': datetime.now().isoformat()
-                }
-            )
-            
-            return job_info
-            
-        except Exception as e:
-            logger.error(f"Error dequeuing from Redis: {str(e)}")
-            return None
+        
+        # If we hit max retries, log warning and return None
+        logger.warning(f"RedisJobQueue.dequeue hit max retries ({max_retries}) due to removed jobs")
+        return None
     
     async def get_job_status(self, task_id: str) -> Optional[JobStatus]:
         """Get job status from Redis"""
@@ -243,7 +298,7 @@ class RedisJobQueue(JobQueue):
             update_data = {'status': status, **kwargs}
             
             if status in [JobStatus.COMPLETED, JobStatus.FAILED]:
-                update_data['completed_at'] = datetime.now().isoformat()
+                update_data['completed_at'] = datetime.now(timezone.utc).isoformat()
             
             await redis_client.hset(
                 f"{self.status_key_prefix}{task_id}",
@@ -273,6 +328,28 @@ class RedisJobQueue(JobQueue):
                 await redis_client.delete(*keys)
         except Exception as e:
             logger.error(f"Error clearing Redis queue: {str(e)}")
+    
+    async def remove_job(self, task_id: str) -> bool:
+        """Remove a specific job from Redis queue"""
+        try:
+            redis_client = await self._get_redis_client()
+            
+            # Remove job status
+            status_deleted = await redis_client.delete(f"{self.status_key_prefix}{task_id}")
+            
+            # Remove from queue (this is complex since Redis lists don't have direct remove by value)
+            # We'll mark the job as cancelled in case it's still in the queue
+            if status_deleted:
+                await redis_client.hset(
+                    f"{self.status_key_prefix}{task_id}_removed",
+                    mapping={'status': JobStatus.CANCELLED, 'removed_at': datetime.now(timezone.utc).isoformat()}
+                )
+                return True
+            
+            return False
+        except Exception as e:
+            logger.error(f"Error removing job from Redis: {str(e)}")
+            return False
 
 
 def create_job_queue() -> JobQueue:

@@ -2,20 +2,47 @@ from typing import Dict, Any, Optional
 import logging
 
 from app.scrapers.base import BaseScraper
-from app.scrapers.cloudscraper_scraper import CloudScraperScraper
-from app.scrapers.selenium_scraper import SeleniumScraper
 from app.models.job import ScraperType
 
 logger = logging.getLogger(__name__)
+
+# Try to import scrapers, but handle missing dependencies
+try:
+    from app.scrapers.cloudscraper_scraper import CloudScraperScraper
+    HAS_CLOUDSCRAPER = True
+except ImportError:
+    HAS_CLOUDSCRAPER = False
+    CloudScraperScraper = None
+
+try:
+    from app.scrapers.selenium_scraper import SeleniumScraper
+    HAS_SELENIUM = True
+except ImportError:
+    HAS_SELENIUM = False
+    SeleniumScraper = None
 
 
 class ScraperFactory:
     """Factory class for creating scrapers"""
     
-    _scrapers: Dict[ScraperType, type] = {
-        ScraperType.CLOUDSCRAPER: CloudScraperScraper,
-        ScraperType.SELENIUM: SeleniumScraper,
-    }
+    # Class-level dictionary to store dynamically registered scrapers
+    _registered_scrapers: Dict[ScraperType, type] = {}
+    
+    @classmethod
+    def _get_scrapers(cls) -> Dict[ScraperType, type]:
+        """Get available scrapers based on installed dependencies"""
+        scrapers = {}
+        
+        if HAS_CLOUDSCRAPER and CloudScraperScraper:
+            scrapers[ScraperType.CLOUDSCRAPER] = CloudScraperScraper
+        
+        if HAS_SELENIUM and SeleniumScraper:
+            scrapers[ScraperType.SELENIUM] = SeleniumScraper
+        
+        # Include dynamically registered scrapers
+        scrapers.update(cls._registered_scrapers)
+            
+        return scrapers
     
     @classmethod
     def create_scraper(
@@ -38,10 +65,17 @@ class ScraperFactory:
         Raises:
             ValueError: If scraper type is not supported
         """
-        if scraper_type not in cls._scrapers:
-            raise ValueError(f"Unsupported scraper type: {scraper_type}")
+        scrapers = cls._get_scrapers()
         
-        scraper_class = cls._scrapers[scraper_type]
+        if scraper_type not in scrapers:
+            if scraper_type == ScraperType.CLOUDSCRAPER and not HAS_CLOUDSCRAPER:
+                raise ValueError("CloudScraper is not available. Install it with: pip install cloudscraper")
+            elif scraper_type == ScraperType.SELENIUM and not HAS_SELENIUM:
+                raise ValueError("Selenium is not available. Install it with: pip install seleniumbase")
+            else:
+                raise ValueError(f"Unsupported scraper type: {scraper_type}")
+        
+        scraper_class = scrapers[scraper_type]
         
         # Create scraper with appropriate arguments
         if scraper_type == ScraperType.SELENIUM:
@@ -52,7 +86,7 @@ class ScraperFactory:
     @classmethod
     def get_available_scrapers(cls) -> list[str]:
         """Get list of available scraper types"""
-        return list(cls._scrapers.keys())
+        return list(cls._get_scrapers().keys())
     
     @classmethod
     def register_scraper(cls, scraper_type: ScraperType, scraper_class: type):
@@ -66,7 +100,8 @@ class ScraperFactory:
         if not issubclass(scraper_class, BaseScraper):
             raise ValueError("Scraper class must inherit from BaseScraper")
         
-        cls._scrapers[scraper_type] = scraper_class
+        # Store the scraper class in the registry
+        cls._registered_scrapers[scraper_type] = scraper_class
         logger.info(f"Registered scraper: {scraper_type}")
 
 

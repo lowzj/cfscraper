@@ -3,10 +3,14 @@ import time
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
-from seleniumbase import BaseCase
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+try:
+    from seleniumbase import BaseCase
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    HAS_SELENIUM = True
+except ImportError:
+    HAS_SELENIUM = False
 
 from app.scrapers.base import BaseScraper, ScraperResult
 from app.core.config import settings
@@ -17,6 +21,8 @@ class SeleniumScraper(BaseScraper):
     
     def __init__(self, timeout: int = None, headless: bool = True):
         super().__init__(timeout or settings.selenium_timeout)
+        if not HAS_SELENIUM:
+            raise ImportError("seleniumbase is not installed. Install it with: pip install seleniumbase")
         self.headless = headless
         self.driver = None
         self.executor = ThreadPoolExecutor(max_workers=1)
@@ -42,6 +48,11 @@ class SeleniumScraper(BaseScraper):
         Returns:
             ScraperResult object containing the response
         """
+        if not HAS_SELENIUM:
+            raise ImportError("seleniumbase is not installed")
+            
+        if method.upper() != "GET":
+            raise ValueError("SeleniumScraper currently only supports GET requests")
         start_time = time.time()
         
         try:
