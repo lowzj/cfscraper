@@ -116,7 +116,7 @@ class InMemoryJobQueue(JobQueue):
     async def dequeue(self) -> Optional[Dict[str, Any]]:
         """Get the next job from the in-memory queue"""
         # Use iterative approach to avoid stack overflow and deadlock risks
-        max_retries = 100  # Prevent infinite loops
+        max_retries = 5  # Prevent infinite loops
         retry_count = 0
         
         while retry_count < max_retries:
@@ -240,7 +240,7 @@ class RedisJobQueue(JobQueue):
     async def dequeue(self) -> Optional[Dict[str, Any]]:
         """Get the next job from Redis queue"""
         # Use iterative approach to avoid stack overflow with high skip rates
-        max_retries = 100  # Prevent infinite loops
+        max_retries = 5  # Prevent infinite loops
         retry_count = 0
         
         while retry_count < max_retries:
