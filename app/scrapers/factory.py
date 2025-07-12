@@ -25,6 +25,9 @@ except ImportError:
 class ScraperFactory:
     """Factory class for creating scrapers"""
     
+    # Class-level dictionary to store dynamically registered scrapers
+    _registered_scrapers: Dict[ScraperType, type] = {}
+    
     @classmethod
     def _get_scrapers(cls) -> Dict[ScraperType, type]:
         """Get available scrapers based on installed dependencies"""
@@ -35,6 +38,9 @@ class ScraperFactory:
         
         if HAS_SELENIUM and SeleniumScraper:
             scrapers[ScraperType.SELENIUM] = SeleniumScraper
+        
+        # Include dynamically registered scrapers
+        scrapers.update(cls._registered_scrapers)
             
         return scrapers
     
@@ -94,7 +100,8 @@ class ScraperFactory:
         if not issubclass(scraper_class, BaseScraper):
             raise ValueError("Scraper class must inherit from BaseScraper")
         
-        # Note: This method is for runtime registration, not for the factory's core scrapers
+        # Store the scraper class in the registry
+        cls._registered_scrapers[scraper_type] = scraper_class
         logger.info(f"Registered scraper: {scraper_type}")
 
 
