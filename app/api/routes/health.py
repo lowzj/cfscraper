@@ -1,12 +1,13 @@
 """
 Health check and monitoring endpoints
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 from typing import Dict, Any
 import time
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.core.database import get_db
 from app.core.config import settings
@@ -44,7 +45,7 @@ async def health_check():
         return HealthCheckResponse(
             status="healthy",
             version="1.0.0",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             uptime=uptime
         )
         
@@ -56,7 +57,7 @@ async def health_check():
 
 
 @router.get("/detailed", response_model=DetailedHealthCheckResponse)
-async def detailed_health_check():
+async def detailed_health_check(db: Session = Depends(get_db)):
     """
     Detailed health check endpoint
     
@@ -74,7 +75,6 @@ async def detailed_health_check():
         
         # Check database connection
         try:
-            db = next(get_db())
             start_time = time.time()
             result = db.execute(text("SELECT 1")).fetchone()
             db_response_time = time.time() - start_time
@@ -82,7 +82,7 @@ async def detailed_health_check():
             components["database"] = {
                 "status": "healthy" if result else "unhealthy",
                 "response_time": db_response_time,
-                "last_check": datetime.utcnow().isoformat()
+                "last_check": datetime.now(timezone.utc).isoformat()
             }
             
             if not result:
@@ -92,7 +92,7 @@ async def detailed_health_check():
             components["database"] = {
                 "status": "unhealthy",
                 "error": str(e),
-                "last_check": datetime.utcnow().isoformat()
+                "last_check": datetime.now(timezone.utc).isoformat()
             }
             overall_status = "unhealthy"
         
@@ -107,14 +107,14 @@ async def detailed_health_check():
                 "status": "healthy",
                 "response_time": queue_response_time,
                 "queue_size": queue_size,
-                "last_check": datetime.utcnow().isoformat()
+                "last_check": datetime.now(timezone.utc).isoformat()
             }
             
         except Exception as e:
             components["queue"] = {
                 "status": "unhealthy",
                 "error": str(e),
-                "last_check": datetime.utcnow().isoformat()
+                "last_check": datetime.now(timezone.utc).isoformat()
             }
             # Don't mark as unhealthy if using in-memory queue
             if "redis" in str(e).lower():
@@ -155,8 +155,6 @@ async def detailed_health_check():
         
         # Get job metrics
         try:
-            db = next(get_db())
-            
             # Get job counts
             total_jobs = db.query(Job).count()
             active_jobs = db.query(Job).filter(Job.status == JobStatus.RUNNING).count()
@@ -165,7 +163,7 @@ async def detailed_health_check():
             
             # Get recent jobs for response time calculation
             recent_jobs = db.query(Job).filter(
-                Job.completed_at >= datetime.utcnow() - timedelta(hours=1),
+                Job.completed_at >= datetime.now(timezone.utc) - timedelta(hours=1),
                 Job.status == JobStatus.COMPLETED,
                 Job.result.isnot(None)
             ).all()
@@ -197,7 +195,7 @@ async def detailed_health_check():
         return DetailedHealthCheckResponse(
             status=overall_status,
             version="1.0.0",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             uptime=uptime,
             components=components,
             metrics=metrics
@@ -211,7 +209,7 @@ async def detailed_health_check():
 
 
 @router.get("/metrics", response_model=MetricsResponse)
-async def get_metrics():
+async def get_metrics(db: Session = Depends(get_db)):
     """
     Get system and application metrics
     
@@ -222,7 +220,6 @@ async def get_metrics():
         MetricsResponse with detailed metrics
     """
     try:
-        db = next(get_db())
         job_queue = get_job_queue()
         
         # Job statistics
@@ -233,7 +230,7 @@ async def get_metrics():
         # Performance metrics
         completed_jobs = db.query(Job).filter(
             Job.status == JobStatus.COMPLETED,
-            Job.completed_at >= datetime.utcnow() - timedelta(hours=24)
+            Job.completed_at >= datetime.now(timezone.utc) - timedelta(hours=24)
         ).all()
         
         performance_metrics = {
@@ -260,7 +257,7 @@ async def get_metrics():
                 )
             
             total_jobs_24h = db.query(Job).filter(
-                Job.created_at >= datetime.utcnow() - timedelta(hours=24)
+                Job.created_at >= datetime.now(timezone.utc) - timedelta(hours=24)
             ).count()
             
             if total_jobs_24h > 0:
@@ -296,8 +293,8 @@ async def get_metrics():
         # Hourly statistics (last 24 hours)
         hourly_stats = {}
         for i in range(24):
-            hour_start = datetime.utcnow() - timedelta(hours=i+1)
-            hour_end = datetime.utcnow() - timedelta(hours=i)
+            hour_start = datetime.now(timezone.utc) - timedelta(hours=i+1)
+            hour_end = datetime.now(timezone.utc) - timedelta(hours=i)
             
             count = db.query(Job).filter(
                 Job.created_at >= hour_start,
@@ -309,7 +306,7 @@ async def get_metrics():
         # Daily statistics (last 7 days)
         daily_stats = {}
         for i in range(7):
-            day_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
+            day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
             day_end = day_start + timedelta(days=1)
             
             count = db.query(Job).filter(
@@ -325,7 +322,7 @@ async def get_metrics():
             system=system_metrics,
             hourly_stats=hourly_stats,
             daily_stats=daily_stats,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
         
     except Exception as e:
@@ -336,7 +333,7 @@ async def get_metrics():
 
 
 @router.get("/status")
-async def get_service_status():
+async def get_service_status(db: Session = Depends(get_db)):
     """
     Get service status summary
     
@@ -347,7 +344,6 @@ async def get_service_status():
         Service status summary
     """
     try:
-        db = next(get_db())
         job_queue = get_job_queue()
         
         # Basic service info
@@ -362,7 +358,7 @@ async def get_service_status():
         
         # Get recent activity
         recent_jobs = db.query(Job).filter(
-            Job.created_at >= datetime.utcnow() - timedelta(hours=1)
+            Job.created_at >= datetime.now(timezone.utc) - timedelta(hours=1)
         ).count()
         
         return {
@@ -375,7 +371,7 @@ async def get_service_status():
             "total_jobs": total_jobs,
             "running_jobs": running_jobs,
             "recent_activity": recent_jobs,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
     except Exception as e:
@@ -397,5 +393,5 @@ async def ping():
     """
     return {
         "message": "pong",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }

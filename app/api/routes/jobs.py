@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc, asc
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 
 from app.core.database import get_db
@@ -263,7 +263,7 @@ async def cancel_bulk_jobs(
                     
                     # Update job in database
                     job.status = JobStatus.CANCELLED
-                    job.completed_at = datetime.utcnow()
+                    job.completed_at = datetime.now(timezone.utc)
                     cancelled_jobs.append(job.task_id)
                     
                 except Exception as e:
@@ -395,7 +395,7 @@ async def get_job_stats(
     """
     try:
         # Calculate date range
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=days)
         
         # Get jobs in date range

@@ -3,7 +3,7 @@ Global exception handlers for the CFScraper API
 """
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 
 from fastapi import Request, HTTPException
@@ -51,7 +51,7 @@ async def cfscraper_exception_handler(request: Request, exc: CFScraperException)
         error=exc.error_code,
         message=exc.message,
         details=exc.details,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         request_id=request_id
     )
     
@@ -91,7 +91,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         error="HTTPException",
         message=str(exc.detail),
         details={"status_code": exc.status_code},
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         request_id=request_id
     )
     
@@ -143,7 +143,7 @@ async def validation_exception_handler(request: Request, exc: ValidationError) -
         error="ValidationError",
         message=f"Request validation failed with {len(errors)} error(s)",
         details={"validation_errors": errors},
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         request_id=request_id
     )
     
@@ -184,7 +184,7 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
         error="InternalServerError",
         message="An unexpected error occurred",
         details={"error_type": type(exc).__name__},
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         request_id=request_id
     )
     
@@ -223,7 +223,7 @@ async def log_requests(request: Request, call_next):
     Returns:
         Response with added logging
     """
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
     request_id = str(uuid.uuid4())
     
     # Log request
@@ -243,7 +243,7 @@ async def log_requests(request: Request, call_next):
         response = await call_next(request)
         
         # Calculate response time
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         response_time = (end_time - start_time).total_seconds()
         
         # Log response
@@ -267,7 +267,7 @@ async def log_requests(request: Request, call_next):
         
     except Exception as e:
         # Calculate response time
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         response_time = (end_time - start_time).total_seconds()
         
         # Log error
