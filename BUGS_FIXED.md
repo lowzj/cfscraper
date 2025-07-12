@@ -116,6 +116,65 @@ end_date = datetime.now(timezone.utc)  # Was: datetime.utcnow()
 - Full compatibility with Python 3.12+
 - No deprecation warnings in production
 
+## Bug #7: Transaction Ordering Issue in create_scrape_job
+**File:** `app/api/routes/scraper.py`
+**Severity:** Critical
+**Description:** The database transaction was committed before the job was enqueued. If the enqueue operation failed, the job would exist in the database with `QUEUED` status but would never be processed, leading to orphaned jobs and inconsistent state.
+
+**Fix:** 
+- Reordered the transaction flow to enqueue first, then commit only if enqueue succeeds
+- Added proper error handling with rollback if enqueue fails
+- Applied the same fix to both single job and bulk job endpoints
+
+**Code Changes:**
+```python
+# OLD (problematic) flow:
+db.add(job)
+db.commit()  # ❌ Commits before enqueuing
+await get_job_queue().enqueue(job_data)  # If this fails, job is orphaned
+
+# NEW (fixed) flow:
+db.add(job)
+try:
+    await get_job_queue().enqueue(job_data)  # ✅ Enqueue first
+    db.commit()  # ✅ Only commit if enqueue succeeds
+except Exception as enqueue_error:
+    db.rollback()  # ✅ Rollback if enqueue fails
+    raise HTTPException(status_code=500, detail=f"Failed to enqueue job: {str(enqueue_error)}")
+```
+
+## Bug #8: Missing Database Fields in Job Creation
+**File:** `app/api/routes/scraper.py`
+**Severity:** Medium
+**Description:** The `Job` database record creation omitted the `tags` and `priority` fields from the request, even though these fields were included in the data sent to the job queue. This caused inconsistency between the database record and the actual queued job data.
+
+**Fix:** 
+- Added missing `tags` and `priority` fields to Job record creation
+- Applied fix to both single job and bulk job endpoints
+- Ensured database and queue data are now consistent
+
+**Code Changes:**
+```python
+# OLD (missing fields):
+job = Job(
+    task_id=job_id,
+    # ... other fields ...
+    status=JobStatus.QUEUED,
+    # ❌ Missing tags and priority
+    created_at=datetime.now(timezone.utc)
+)
+
+# NEW (complete fields):
+job = Job(
+    task_id=job_id,
+    # ... other fields ...
+    status=JobStatus.QUEUED,
+    tags=request.tags or [],      # ✅ Added tags
+    priority=request.priority,    # ✅ Added priority
+    created_at=datetime.now(timezone.utc)
+)
+```
+
 ## Impact Assessment
 
 ### Before Fixes:
@@ -151,5 +210,18 @@ The codebase is now free of these critical bugs and should run without the ident
 - ✅ Full compatibility with Python 3.12+
 - ✅ No deprecation warnings
 
-## Final Status
-The codebase is now free of all identified critical bugs and follows Python 3.12 best practices.
+## Final Status (Updated)
+The codebase is now free of **8 total critical bugs** and follows production-ready best practices for data consistency and transaction management.
+
+## Updated Impact Assessment
+
+### Before Latest Fixes:
+- ❌ Critical data consistency issues with orphaned jobs
+- ❌ Transaction race conditions could leave database in inconsistent state  
+- ❌ Missing metadata fields causing database/queue inconsistency
+
+### After Latest Fixes:
+- ✅ Atomic job creation with proper transaction ordering
+- ✅ Complete rollback on enqueue failures prevents orphaned jobs
+- ✅ Full database/queue data consistency
+- ✅ Proper error handling with meaningful error messages

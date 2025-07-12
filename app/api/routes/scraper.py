@@ -87,7 +87,7 @@ async def create_scrape_job(
             'callback_url': str(request.callback_url) if request.callback_url else None
         }
         
-        # Create job record in database
+        # Create job record in database (but don't commit yet)
         job = Job(
             task_id=job_id,
             url=str(request.url),
@@ -98,15 +98,26 @@ async def create_scrape_job(
             scraper_type=request.scraper_type,
             max_retries=request.config.max_retries,
             status=JobStatus.QUEUED,
+            tags=request.tags or [],
+            priority=request.priority,
             created_at=datetime.now(timezone.utc)
         )
         
         db.add(job)
-        db.commit()
-        db.refresh(job)
         
-        # Enqueue job
-        await get_job_queue().enqueue(job_data)
+        # Try to enqueue job first
+        try:
+            await get_job_queue().enqueue(job_data)
+            # Only commit if enqueue succeeds
+            db.commit()
+            db.refresh(job)
+        except Exception as enqueue_error:
+            # Rollback database transaction if enqueue fails
+            db.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to enqueue job: {str(enqueue_error)}"
+            )
         
         return ScrapeResponse(
             job_id=job_id,
@@ -312,8 +323,9 @@ async def create_bulk_scrape_jobs(
         # Generate batch ID
         batch_id = f"batch_{str(uuid.uuid4())}"
         job_ids = []
+        jobs_data = []
         
-        # Create jobs
+        # Create job records in database (but don't commit yet)
         for job_request in request.jobs:
             job_id = f"job_{str(uuid.uuid4())}"
             job_ids.append(job_id)
@@ -333,6 +345,7 @@ async def create_bulk_scrape_jobs(
                 'priority': job_request.priority,
                 'callback_url': str(job_request.callback_url) if job_request.callback_url else None
             }
+            jobs_data.append(job_data)
             
             # Create job record in database
             job = Job(
@@ -345,15 +358,26 @@ async def create_bulk_scrape_jobs(
                 scraper_type=job_request.scraper_type,
                 max_retries=job_request.config.max_retries,
                 status=JobStatus.QUEUED,
+                tags=job_request.tags or [],
+                priority=job_request.priority,
                 created_at=datetime.now(timezone.utc)
             )
             
             db.add(job)
-            
-            # Enqueue job
-            await get_job_queue().enqueue(job_data)
         
-        db.commit()
+        # Try to enqueue all jobs first
+        try:
+            for job_data in jobs_data:
+                await get_job_queue().enqueue(job_data)
+            # Only commit if all enqueues succeed
+            db.commit()
+        except Exception as enqueue_error:
+            # Rollback database transaction if any enqueue fails
+            db.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to enqueue batch jobs: {str(enqueue_error)}"
+            )
         
         return BulkScrapeResponse(
             batch_id=batch_id,
