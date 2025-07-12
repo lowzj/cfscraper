@@ -87,8 +87,8 @@ def build_job_status_response(job: Job, queue_status: Optional[JobStatus] = None
         result=result,
         error_message=job.error_message,
         retry_count=job.retry_count,
-        tags=job.result.get('tags', []) if job.result else [],
-        priority=job.result.get('priority', 0) if job.result else 0
+        tags=job.tags or [],
+        priority=job.priority or 0
     )
 
 
