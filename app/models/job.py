@@ -37,6 +37,8 @@ class Job(Base):
     params = Column(JSON, default=dict)
     
     # Job metadata
+    tags = Column(JSON, default=list)
+    priority = Column(Integer, default=0)
     created_at = Column(DateTime, default=func.now())
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
