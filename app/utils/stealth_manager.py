@@ -412,12 +412,11 @@ class JSBypassManager:
     ]
 
     def __init__(self):
-        self._lock = asyncio.Lock()
+        pass
 
-    async def get_stealth_scripts(self) -> List[str]:
+    def get_stealth_scripts(self) -> List[str]:
         """Get JavaScript scripts for stealth mode"""
-        async with self._lock:
-            return self.STEALTH_SCRIPTS.copy()
+        return self.STEALTH_SCRIPTS.copy()
 
     async def inject_stealth_scripts(self, driver):
         """Inject stealth scripts into a Selenium driver"""
