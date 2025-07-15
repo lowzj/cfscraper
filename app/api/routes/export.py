@@ -294,7 +294,7 @@ async def list_exports():
         raise HTTPException(status_code=500, detail=f"Failed to list exports: {str(e)}")
 
 
-@router.delete("/export/{export_id}")
+@router.delete("/{export_id}")
 async def delete_export(export_id: str):
     """
     Delete an export file
