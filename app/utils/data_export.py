@@ -267,71 +267,54 @@ class CSVExporter:
     async def export_streaming(self, data_generator: AsyncGenerator[Dict[str, Any], None], output_file: IO) -> int:
         """Export data using streaming for large datasets, handling dynamic headers."""
         total_bytes = 0
-        all_headers = set()
-        temp_filename = None
+        headers = None
+        writer = None
+        first_row = None
         
         try:
-            # Use a temporary file to buffer rows
-            with tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8', newline='') as temp_f:
-                temp_filename = temp_f.name
-
-                # 1. First pass: write to temp file and collect all headers
-                async for item in data_generator:
-                    cleaned_item = await self.transformer.clean_data(item)
-                    flattened_item = await self.transformer.flatten_data(cleaned_item)
-
-                    # Update headers
-                    all_headers.update(flattened_item.keys())
-                    
-                    # Write row as JSON to temp file for later processing
-                    temp_f.write(json.dumps(flattened_item) + '\n')
-
-                # 2. Second pass: write to the final output file
-                if not all_headers:
-                    return 0
-
-                temp_f.seek(0) # Rewind temp file
-
-                headers = sorted(list(all_headers))
+            async for item in data_generator:
+                cleaned_item = await self.transformer.clean_data(item)
+                flattened_item = await self.transformer.flatten_data(cleaned_item)
                 
-                writer = csv.DictWriter(
-                    output_file,
-                    fieldnames=headers,
-                    delimiter=self.config.csv_delimiter,
-                    quotechar=self.config.csv_quote_char,
-                    quoting=csv.QUOTE_MINIMAL
-                )
-
-                # Write headers
-                if self.config.csv_include_headers:
-                    writer.writeheader()
-                    header_line = self.config.csv_delimiter.join(headers) + '\n'
-                    total_bytes += len(header_line.encode('utf-8'))
-
-                # Write data rows from temp file
-                for line in temp_f:
-                    row_data = json.loads(line)
-                    # Ensure all keys are present
-                    row = {key: row_data.get(key, '') for key in headers}
+                # Initialize headers and writer from first row
+                if headers is None:
+                    headers = sorted(list(flattened_item.keys()))
+                    first_row = flattened_item
+                    
+                    # Create CSV writer
+                    writer = csv.DictWriter(
+                        output_file,
+                        fieldnames=headers,
+                        delimiter=self.config.csv_delimiter,
+                        quotechar=self.config.csv_quote_char,
+                        quoting=csv.QUOTE_MINIMAL
+                    )
+                    
+                    # Write headers if configured
+                    if self.config.csv_include_headers:
+                        writer.writeheader()
+                        header_line = self.config.csv_delimiter.join(headers) + '\n'
+                        total_bytes += len(header_line.encode('utf-8'))
+                    
+                    # Write the first row
+                    row = {key: first_row.get(key, '') for key in headers}
                     writer.writerow(row)
-
-                    # Estimate row size
                     row_line = self.config.csv_delimiter.join(str(v) for v in row.values()) + '\n'
                     total_bytes += len(row_line.encode('utf-8'))
-
+                    
+                else:
+                    # Write subsequent rows directly to output
+                    # Note: New headers that appear later are ignored to maintain streaming
+                    row = {key: flattened_item.get(key, '') for key in headers}
+                    writer.writerow(row)
+                    row_line = self.config.csv_delimiter.join(str(v) for v in row.values()) + '\n'
+                    total_bytes += len(row_line.encode('utf-8'))
+            
             return total_bytes
 
         except Exception as e:
             logger.error(f"Streaming CSV export failed: {str(e)}")
             raise
-        finally:
-            # Clean up the temporary file (now that it's closed)
-            if temp_filename and os.path.exists(temp_filename):
-                try:
-                    os.remove(temp_filename)
-                except OSError:
-                    # Log but don't raise - we don't want to mask the original exception
-                    logger.warning(f"Failed to remove temporary file: {temp_filename}")
 
 
 class XMLExporter:
