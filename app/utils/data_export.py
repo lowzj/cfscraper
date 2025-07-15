@@ -268,12 +268,13 @@ class CSVExporter:
         """Export data using streaming for large datasets, handling dynamic headers."""
         total_bytes = 0
         all_headers = set()
+        temp_filename = None
         
-        # Use a temporary file to buffer rows
-        with tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8', newline='') as temp_f:
-            temp_filename = temp_f.name
+        try:
+            # Use a temporary file to buffer rows
+            with tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8', newline='') as temp_f:
+                temp_filename = temp_f.name
 
-            try:
                 # 1. First pass: write to temp file and collect all headers
                 async for item in data_generator:
                     cleaned_item = await self.transformer.clean_data(item)
@@ -318,14 +319,19 @@ class CSVExporter:
                     row_line = self.config.csv_delimiter.join(str(v) for v in row.values()) + '\n'
                     total_bytes += len(row_line.encode('utf-8'))
 
-                return total_bytes
+            return total_bytes
 
-            except Exception as e:
-                logger.error(f"Streaming CSV export failed: {str(e)}")
-                raise
-            finally:
-                # Clean up the temporary file
-                os.remove(temp_filename)
+        except Exception as e:
+            logger.error(f"Streaming CSV export failed: {str(e)}")
+            raise
+        finally:
+            # Clean up the temporary file (now that it's closed)
+            if temp_filename and os.path.exists(temp_filename):
+                try:
+                    os.remove(temp_filename)
+                except OSError:
+                    # Log but don't raise - we don't want to mask the original exception
+                    logger.warning(f"Failed to remove temporary file: {temp_filename}")
 
 
 class XMLExporter:
