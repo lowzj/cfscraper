@@ -10,7 +10,7 @@ from app.scrapers.factory import create_scraper
 from app.utils.queue import JobQueue
 from app.core.database import SessionLocal
 from app.core.config import settings
-from app.utils.webhooks import send_job_completed_webhook, send_job_failed_webhook, WebhookEvent
+from app.utils.webhooks import send_job_completed_webhook, send_job_failed_webhook
 
 logger = logging.getLogger(__name__)
 

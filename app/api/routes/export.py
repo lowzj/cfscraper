@@ -123,17 +123,18 @@ async def prepare_export_data(
         
         # Add content if requested
         if include_content and job.result:
+            result_data = job.result if isinstance(job.result, dict) else {}
             job_data["result"] = {
-                "status_code": job.result.status_code,
-                "content": job.result.content,
-                "response_time": job.result.response_time,
-                "error": job.result.error,
-                "timestamp": job.result.timestamp.isoformat() if job.result.timestamp else None
+                "status_code": result_data.get("status_code"),
+                "content": result_data.get("content"),
+                "response_time": result_data.get("response_time"),
+                "error": result_data.get("error"),
+                "timestamp": result_data.get("timestamp")
             }
             
             # Add headers if requested
-            if include_headers and job.result.headers:
-                job_data["result"]["headers"] = job.result.headers
+            if include_headers and result_data.get("headers"):
+                job_data["result"]["headers"] = result_data.get("headers")
         
         # Add request parameters
         if job.headers:
@@ -148,7 +149,7 @@ async def prepare_export_data(
     return export_data
 
 
-@router.post("/export", response_model=ExportResponse)
+@router.post("/", response_model=ExportResponse)
 async def export_data(
     request: ExportRequest,
     background_tasks: BackgroundTasks,
