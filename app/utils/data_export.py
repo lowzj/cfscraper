@@ -272,37 +272,45 @@ class CSVExporter:
         all_headers = set()
         
         try:
-            # First pass to collect all headers
-            temp_data = []
+            # Process data in streaming fashion
             async for item in data_generator:
                 cleaned_item = await self.transformer.clean_data(item)
                 flattened_item = await self.transformer.flatten_data(cleaned_item)
-                temp_data.append(flattened_item)
-                all_headers.update(flattened_item.keys())
-            
-            headers = sorted(list(all_headers))
-            
-            # Create CSV writer
-            writer = csv.DictWriter(
-                output_file,
-                fieldnames=headers,
-                delimiter=self.config.csv_delimiter,
-                quotechar=self.config.csv_quote_char,
-                quoting=csv.QUOTE_MINIMAL
-            )
-            
-            # Write headers
-            if self.config.csv_include_headers:
-                writer.writeheader()
-                header_line = self.config.csv_delimiter.join(headers) + '\n'
-                total_bytes += len(header_line)
-            
-            # Write data
-            for item in temp_data:
-                row = {key: item.get(key, '') for key in headers}
-                writer.writerow(row)
-                row_line = self.config.csv_delimiter.join(str(v) for v in row.values()) + '\n'
-                total_bytes += len(row_line)
+                
+                # Collect headers from first item or expand headers if new ones found
+                current_headers = set(flattened_item.keys())
+                if not headers_written or current_headers - all_headers:
+                    all_headers.update(current_headers)
+                    
+                    # If we have new headers and already started writing, we need to restart
+                    # For streaming CSV, we'll use a consistent set of headers from the first item
+                    if not headers_written:
+                        headers = sorted(list(all_headers))
+                        
+                        # Create CSV writer
+                        writer = csv.DictWriter(
+                            output_file,
+                            fieldnames=headers,
+                            delimiter=self.config.csv_delimiter,
+                            quotechar=self.config.csv_quote_char,
+                            quoting=csv.QUOTE_MINIMAL
+                        )
+                        
+                        # Write headers
+                        if self.config.csv_include_headers:
+                            writer.writeheader()
+                            header_line = self.config.csv_delimiter.join(headers) + '\n'
+                            total_bytes += len(header_line)
+                        
+                        headers_written = True
+                
+                # Write row immediately
+                if writer:
+                    row = {key: flattened_item.get(key, '') for key in writer.fieldnames}
+                    writer.writerow(row)
+                    # Estimate row size for byte counting
+                    row_line = self.config.csv_delimiter.join(str(v) for v in row.values()) + '\n'
+                    total_bytes += len(row_line)
             
             return total_bytes
             

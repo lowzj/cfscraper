@@ -161,3 +161,45 @@ cython_debug/
 
 
 cfscraper.db
+
+# Clacky-related configuration
+.clackyai/
+*.1024
+
+# FastAPI specific files
+*.db
+*.sqlite
+*.sqlite3
+app.db
+test.db
+instance/
+
+# UV package manager
+.python-version
+.venv/
+uv.lock
+
+# Selenium/Browser automation files
+downloads/
+screenshots/
+logs/
+selenium-debug.log
+geckodriver.log
+chromedriver.log
+
+# Redis dump files
+dump.rdb
+
+# Alembic temp files
+alembic/versions/*.pyc
+
+# Application logs
+*.log
+app.log
+scraper.log
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
