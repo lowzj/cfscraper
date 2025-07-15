@@ -1,0 +1,139 @@
+version: '3.8'
+
+services:
+  # Main application service
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cfscraper-app-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://cfscraper:cfscraper_password@postgres:5432/cfscraper_dev
+      - REDIS_URL=redis://redis:6379
+      - USE_IN_MEMORY_QUEUE=false
+      - DEBUG=true
+      - RUN_MIGRATIONS=true
+      - RATE_LIMITING_ENABLED=true
+      - MAX_CONCURRENT_JOBS=5
+      - JOB_TIMEOUT=300
+    volumes:
+      # Mount source code for live reloading
+      - ./app:/app/app:ro
+      - ./alembic:/app/alembic:ro
+      - ./pyproject.toml:/app/pyproject.toml:ro
+      - ./uv.lock:/app/uv.lock:ro
+      # Mount logs and data directories
+      - ./logs:/app/logs
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cfscraper-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PostgreSQL database service
+  postgres:
+    image: postgres:15-alpine
+    container_name: cfscraper-postgres-dev
+    environment:
+      - POSTGRES_DB=cfscraper_dev
+      - POSTGRES_USER=cfscraper
+      - POSTGRES_PASSWORD=cfscraper_password
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - cfscraper-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cfscraper -d cfscraper_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Redis service for job queue
+  redis:
+    image: redis:7-alpine
+    container_name: cfscraper-redis-dev
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - cfscraper-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Redis Commander for Redis management (development only)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: cfscraper-redis-commander-dev
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - cfscraper-network
+    restart: unless-stopped
+    profiles:
+      - tools
+
+  # pgAdmin for PostgreSQL management (development only)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: cfscraper-pgadmin-dev
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@cfscraper.local
+      - PGADMIN_DEFAULT_PASSWORD=admin
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    networks:
+      - cfscraper-network
+    restart: unless-stopped
+    profiles:
+      - tools
+
+# Named volumes for data persistence
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+# Custom network for service communication
+networks:
+  cfscraper-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
