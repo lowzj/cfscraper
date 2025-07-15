@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.middleware import setup_exception_handlers, log_requests
-from app.core.rate_limit_middleware import RateLimitMiddleware
+from app.core.rate_limit_middleware import RateLimitMiddleware, setup_rate_limiting, RateLimitConfig
 from app.utils.proxy_manager import initialize_proxy_system, shutdown_proxy_system
 from app.utils.stealth_manager import initialize_stealth_system
 from app.utils.rate_limiter import initialize_rate_limiting
@@ -47,11 +47,11 @@ app.add_middleware(
 
 # Add rate limiting middleware
 if settings.rate_limiting_enabled:
-    app.add_middleware(
-        RateLimitMiddleware,
+    rate_limit_config = RateLimitConfig(
         enabled=settings.rate_limiting_enabled,
         include_headers=settings.rate_limit_include_headers
     )
+    setup_rate_limiting(app, rate_limit_config)
 
 # Add request logging middleware
 app.middleware("http")(log_requests)

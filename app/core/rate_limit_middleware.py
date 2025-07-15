@@ -208,6 +208,7 @@ class RateLimitConfig:
         default_requests_per_minute: int = 60,
         default_requests_per_hour: int = 1000,
         include_headers: bool = True,
+        default_rule_id: str = "default_0",
         admin_ips: list = None,
         bypass_tokens: list = None
     ):
@@ -216,6 +217,7 @@ class RateLimitConfig:
         self.default_requests_per_minute = default_requests_per_minute
         self.default_requests_per_hour = default_requests_per_hour
         self.include_headers = include_headers
+        self.default_rule_id = default_rule_id
         self.admin_ips = admin_ips or []
         self.bypass_tokens = bypass_tokens or []
 
@@ -233,6 +235,7 @@ def setup_rate_limiting(app, config: Optional[RateLimitConfig] = None):
     app.add_middleware(
         RateLimitMiddleware,
         enabled=config.enabled,
+        default_rule_id=config.default_rule_id,
         include_headers=config.include_headers
     )
     
