@@ -142,6 +142,7 @@ uv run pytest tests/ -v
 
 ```
 cfscraper/
+├── alembic/           # Database migration scripts
 ├── app/
 │   ├── api/           # API routes
 │   ├── core/          # Core configuration
@@ -149,8 +150,9 @@ cfscraper/
 │   ├── scrapers/      # Scraper implementations
 │   ├── utils/         # Utilities (queue, executor)
 │   └── main.py        # FastAPI application
+├── docs/              # Documentation
+├── examples/          # Demo scripts
 ├── tests/             # Test files
-├── demo.py            # Demo script
 ├── pyproject.toml     # Project configuration
 └── README.md          # This file
 ```
@@ -164,4 +166,4 @@ cfscraper/
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the Apache 2.0 License - see the LICENSE file for details.
