@@ -78,10 +78,18 @@ class ScraperFactory:
         scraper_class = scrapers[scraper_type]
         
         # Create scraper with appropriate arguments
-        if scraper_type == ScraperType.SELENIUM:
-            return scraper_class(timeout=timeout, **kwargs)
-        else:
-            return scraper_class(timeout=timeout)
+        # Filter kwargs to only include parameters that the scraper accepts
+        import inspect
+        scraper_signature = inspect.signature(scraper_class.__init__)
+        scraper_params = set(scraper_signature.parameters.keys()) - {'self'}
+        
+        # Filter kwargs to only include valid parameters for this scraper
+        filtered_kwargs = {
+            k: v for k, v in kwargs.items() 
+            if k in scraper_params
+        }
+        
+        return scraper_class(timeout=timeout, **filtered_kwargs)
     
     @classmethod
     def get_available_scrapers(cls) -> list[str]:

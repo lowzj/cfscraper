@@ -6,6 +6,11 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.middleware import setup_exception_handlers, log_requests
+from app.core.rate_limit_middleware import RateLimitMiddleware, setup_rate_limiting, RateLimitConfig
+from app.utils.proxy_manager import initialize_proxy_system, shutdown_proxy_system
+from app.utils.stealth_manager import initialize_stealth_system
+from app.utils.rate_limiter import initialize_rate_limiting
+from app.utils.webhooks import initialize_webhook_system, shutdown_webhook_system
 
 
 @asynccontextmanager
@@ -13,9 +18,15 @@ async def lifespan(app: FastAPI):
     # Startup
     print("Starting up cfscraper API...")
     init_db()  # Initialize database tables
+    await initialize_proxy_system()  # Initialize proxy rotation system
+    await initialize_stealth_system()  # Initialize stealth features
+    await initialize_rate_limiting()  # Initialize rate limiting
+    await initialize_webhook_system()  # Initialize webhook system
     yield
     # Shutdown
     print("Shutting down cfscraper API...")
+    await shutdown_proxy_system()  # Cleanup proxy system
+    await shutdown_webhook_system()  # Cleanup webhook system
 
 
 app = FastAPI(
@@ -33,6 +44,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add rate limiting middleware
+if settings.rate_limiting_enabled:
+    rate_limit_config = RateLimitConfig(
+        enabled=settings.rate_limiting_enabled,
+        include_headers=settings.rate_limit_include_headers
+    )
+    setup_rate_limiting(app, rate_limit_config)
 
 # Add request logging middleware
 app.middleware("http")(log_requests)

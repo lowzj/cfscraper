@@ -16,13 +16,15 @@ class ScraperResult:
         content: str,
         headers: Dict[str, str],
         response_time: float,
-        error: Optional[str] = None
+        error: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
     ):
         self.status_code = status_code
         self.content = content
         self.headers = headers
         self.response_time = response_time
         self.error = error
+        self.metadata = metadata or {}
         self.timestamp = datetime.now()
     
     def is_success(self) -> bool:
@@ -31,7 +33,7 @@ class ScraperResult:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert result to dictionary"""
-        return {
+        result = {
             "status_code": self.status_code,
             "content": self.content,
             "headers": self.headers,
@@ -40,6 +42,9 @@ class ScraperResult:
             "timestamp": self.timestamp.isoformat(),
             "success": self.is_success()
         }
+        if self.metadata:
+            result["metadata"] = self.metadata
+        return result
 
 
 class BaseScraper(ABC):

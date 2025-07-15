@@ -10,6 +10,7 @@ from app.scrapers.factory import create_scraper
 from app.utils.queue import JobQueue
 from app.core.database import SessionLocal
 from app.core.config import settings
+from app.utils.webhooks import send_job_completed_webhook, send_job_failed_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ class JobExecutor:
                     job.status = JobStatus.COMPLETED
                     job.result = result.to_dict()
                     job.completed_at = datetime.now()
-                    
+
                     # Store result in separate table
                     job_result = JobResult(
                         job_id=job.id,
@@ -99,22 +100,60 @@ class JobExecutor:
                         content_type=result.headers.get('content-type', 'text/html')
                     )
                     db.add(job_result)
-                    
+
                     await self.job_queue.update_job_status(
-                        task_id, 
+                        task_id,
                         JobStatus.COMPLETED,
                         result=result.to_dict()
                     )
+
+                    # Send webhook for job completion
+                    try:
+                        webhook_payload = {
+                            "job_id": task_id,
+                            "status": "completed",
+                            "url": job.url,
+                            "method": job.method,
+                            "scraper_type": job.scraper_type.value,
+                            "started_at": job.started_at.isoformat() if job.started_at else None,
+                            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+                            "result": {
+                                "status_code": result.status_code,
+                                "response_time": result.response_time,
+                                "content_length": len(result.content),
+                                "content_type": result.headers.get('content-type', 'text/html')
+                            }
+                        }
+                        await send_job_completed_webhook(webhook_payload)
+                    except Exception as e:
+                        logger.warning(f"Failed to send completion webhook for job {task_id}: {str(e)}")
+
                 else:
                     job.status = JobStatus.FAILED
                     job.error_message = result.error
                     job.completed_at = datetime.now()
-                    
+
                     await self.job_queue.update_job_status(
                         task_id,
                         JobStatus.FAILED,
                         error=result.error
                     )
+
+                    # Send webhook for job failure
+                    try:
+                        webhook_payload = {
+                            "job_id": task_id,
+                            "status": "failed",
+                            "url": job.url,
+                            "method": job.method,
+                            "scraper_type": job.scraper_type.value,
+                            "started_at": job.started_at.isoformat() if job.started_at else None,
+                            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+                            "error": result.error
+                        }
+                        await send_job_failed_webhook(webhook_payload)
+                    except Exception as e:
+                        logger.warning(f"Failed to send failure webhook for job {task_id}: {str(e)}")
                 
                 db.commit()
                 
