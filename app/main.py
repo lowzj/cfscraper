@@ -71,13 +71,77 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return JSONResponse(
-        content={
-            "status": "healthy",
-            "version": "1.0.0",
-            "service": "cfscraper-api"
-        }
-    )
+    """
+    Docker health check endpoint
+
+    This endpoint is used by Docker HEALTHCHECK instruction.
+    Returns 200 for healthy, 503 for unhealthy.
+    """
+    from sqlalchemy import text
+    from app.core.database import SessionLocal
+    from app.utils.queue import create_job_queue
+    import time
+
+    try:
+        # Check database connectivity
+        db = SessionLocal()
+        try:
+            result = db.execute(text("SELECT 1")).fetchone()
+            if not result:
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "status": "unhealthy",
+                        "error": "Database connection failed",
+                        "service": "cfscraper-api"
+                    }
+                )
+        except Exception as e:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "unhealthy",
+                    "error": f"Database error: {str(e)}",
+                    "service": "cfscraper-api"
+                }
+            )
+        finally:
+            db.close()
+
+        # Check Redis/Queue connectivity (if not using in-memory queue)
+        if not settings.use_in_memory_queue:
+            try:
+                job_queue = create_job_queue()
+                # Test Redis connection by getting queue size
+                await job_queue.get_queue_size()
+            except Exception as e:
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "status": "unhealthy",
+                        "error": f"Redis connection failed: {str(e)}",
+                        "service": "cfscraper-api"
+                    }
+                )
+
+        return JSONResponse(
+            content={
+                "status": "healthy",
+                "version": "1.0.0",
+                "service": "cfscraper-api",
+                "timestamp": time.time()
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "error": f"Health check failed: {str(e)}",
+                "service": "cfscraper-api"
+            }
+        )
 
 
 if __name__ == "__main__":
