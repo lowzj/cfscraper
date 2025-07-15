@@ -212,10 +212,14 @@ class SeleniumScraper(BaseScraper):
 
     def _apply_stealth_features(self):
         """Apply stealth features to the Selenium driver"""
+        if not self.driver:
+            self.logger.warning("Driver not initialized, skipping stealth features")
+            return
+            
         try:
             # Inject stealth scripts
             js_bypass_manager = get_js_bypass_manager()
-            stealth_scripts = asyncio.run(js_bypass_manager.get_stealth_scripts())
+            stealth_scripts = js_bypass_manager.get_stealth_scripts()
 
             for script in stealth_scripts:
                 try:

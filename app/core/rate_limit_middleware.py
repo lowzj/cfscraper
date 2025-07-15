@@ -173,7 +173,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             status_code=429,
             content={
                 "error": "Rate limit exceeded",
-                "message": f"Too many requests. Try again in {result.retry_after} seconds.",
+                "message": (
+                    f"Too many requests. Try again in {result.retry_after} seconds."
+                    if result.retry_after is not None
+                    else "Too many requests. Rate limit exceeded."
+                ),
                 "details": {
                     "limit": result.limit,
                     "remaining": result.remaining,
@@ -226,13 +230,11 @@ def setup_rate_limiting(app, config: Optional[RateLimitConfig] = None):
         return
     
     # Add middleware
-    middleware = RateLimitMiddleware(
-        app,
+    app.add_middleware(
+        RateLimitMiddleware,
         enabled=config.enabled,
         include_headers=config.include_headers
     )
-    
-    app.add_middleware(RateLimitMiddleware, enabled=config.enabled)
     
     logger.info("Rate limiting middleware added to FastAPI app")
 
