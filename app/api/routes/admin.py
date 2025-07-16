@@ -53,9 +53,9 @@ class APIKeyListResponse(BaseModel):
 
 @router.post("/api-keys", response_model=APIKeyResponse)
 async def create_api_key(
+    req: Request,
     request: APIKeyCreateRequest,
-    admin_key: APIKeyInfo = Depends(require_admin_key),
-    req: Request = None
+    admin_key: APIKeyInfo = Depends(require_admin_key)
 ):
     """
     Create a new API key (Admin only)
@@ -161,9 +161,9 @@ async def list_api_keys(
 
 @router.delete("/api-keys/{key_id}")
 async def revoke_api_key(
+    req: Request,
     key_id: str,
-    admin_key: APIKeyInfo = Depends(require_admin_key),
-    req: Request = None
+    admin_key: APIKeyInfo = Depends(require_admin_key)
 ):
     """
     Revoke an API key (Admin only)
