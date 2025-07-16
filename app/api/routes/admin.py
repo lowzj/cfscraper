@@ -18,7 +18,7 @@ from app.security.authentication import (
     APIKeyPermission,
     APIKeyInfo
 )
-from app.security.audit import get_audit_logger
+from app.security.audit import get_audit_logger, AuditEvent, AuditEventType, AuditSeverity
 
 router = APIRouter()
 
@@ -92,14 +92,29 @@ async def create_api_key(
         
         # Log admin action
         audit_logger = get_audit_logger()
-        audit_logger.log_event({
-            "event_type": "admin_action",
-            "action": "create_api_key",
-            "admin_key_id": admin_key.key_id,
-            "new_key_permissions": request.permissions,
-            "ip_address": req.client.host if req and req.client else "unknown",
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
+        audit_event = AuditEvent(
+            event_type=AuditEventType.ADMIN_ACTION,
+            severity=AuditSeverity.MEDIUM,
+            timestamp=datetime.now(timezone.utc),
+            user_id=admin_key.key_id,
+            session_id=None,
+            ip_address=req.client.host if req and req.client else "unknown",
+            user_agent=req.headers.get("user-agent", "unknown") if req else "unknown",
+            endpoint="/admin/api-keys",
+            method="POST",
+            status_code=200,
+            message=f"Admin created API key with permissions: {request.permissions}",
+            details={
+                "action": "create_api_key",
+                "admin_key_id": admin_key.key_id,
+                "new_key_permissions": request.permissions,
+                "new_key_id": key_info.key_id,
+                "description": request.description
+            },
+            request_id=None,
+            api_key_id=admin_key.key_id
+        )
+        audit_logger.log_event(audit_event)
         
         return APIKeyResponse(
             api_key=api_key,
@@ -175,14 +190,27 @@ async def revoke_api_key(
         
         # Log admin action
         audit_logger = get_audit_logger()
-        audit_logger.log_event({
-            "event_type": "admin_action",
-            "action": "revoke_api_key",
-            "admin_key_id": admin_key.key_id,
-            "revoked_key_id": key_id,
-            "ip_address": req.client.host if req and req.client else "unknown",
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
+        audit_event = AuditEvent(
+            event_type=AuditEventType.ADMIN_ACTION,
+            severity=AuditSeverity.MEDIUM,
+            timestamp=datetime.now(timezone.utc),
+            user_id=admin_key.key_id,
+            session_id=None,
+            ip_address=req.client.host if req and req.client else "unknown",
+            user_agent=req.headers.get("user-agent", "unknown") if req else "unknown",
+            endpoint=f"/admin/api-keys/{key_id}",
+            method="DELETE",
+            status_code=200,
+            message=f"Admin revoked API key: {key_id}",
+            details={
+                "action": "revoke_api_key",
+                "admin_key_id": admin_key.key_id,
+                "revoked_key_id": key_id
+            },
+            request_id=None,
+            api_key_id=admin_key.key_id
+        )
+        audit_logger.log_event(audit_event)
         
         return {"message": f"API key {key_id} has been revoked"}
         

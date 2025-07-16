@@ -26,41 +26,65 @@ class DataEncryption:
     def __init__(self, encryption_key: Optional[str] = None):
         self.encryption_key = encryption_key or settings.encryption_key
         self._fernet = None
+        self._init_error = None
         self._initialize_fernet()
     
     def _initialize_fernet(self):
         """Initialize Fernet cipher with derived key"""
         try:
+            # Get salt from settings (will be auto-generated if not set)
+            salt = settings.encryption_salt
+            if isinstance(salt, str):
+                # Convert hex string to bytes with specific error handling
+                try:
+                    salt_bytes = bytes.fromhex(salt)
+                except ValueError as hex_error:
+                    logger.error(f"Invalid hex format in encryption salt: {hex_error}")
+                    logger.error("Encryption will not be available - fix the encryption_salt configuration")
+                    self._fernet = None
+                    self._init_error = f"Invalid hex format in encryption salt: {hex_error}"
+                    return
+            else:
+                # Fallback to default salt (should not happen with proper config)
+                salt_bytes = b'cfscraper_default_salt_change_me'
+                logger.warning("Using fallback salt - this is not secure!")
+
             # Derive a proper key from the encryption key
             kdf = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
                 length=32,
-                salt=b'cfscraper_salt',  # In production, use a random salt per installation
+                salt=salt_bytes,
                 iterations=100000,
             )
             key = base64.urlsafe_b64encode(kdf.derive(self.encryption_key.encode()))
             self._fernet = Fernet(key)
+            self._init_error = None
         except Exception as e:
             logger.error(f"Failed to initialize encryption: {e}")
+            logger.error("Encryption will not be available - check encryption configuration")
             self._fernet = None
+            self._init_error = str(e)
     
     def encrypt(self, data: Union[str, dict, list]) -> Optional[str]:
         """Encrypt data and return base64 encoded string"""
         if not self._fernet:
-            logger.warning("Encryption not available, returning data as-is")
-            return str(data) if not isinstance(data, str) else data
-        
+            error_msg = f"Encryption not available - {self._init_error or 'initialization failed'}"
+            logger.error(error_msg)
+            logger.error("Cannot encrypt sensitive data safely - returning None")
+            # Don't return unencrypted data - return None to indicate failure
+            return None
+
         try:
             # Convert data to JSON string if not already a string
             if isinstance(data, (dict, list)):
                 data_str = json.dumps(data)
             else:
                 data_str = str(data)
-            
+
             # Encrypt and encode
             encrypted_data = self._fernet.encrypt(data_str.encode())
             return base64.urlsafe_b64encode(encrypted_data).decode()
-        
+
         except Exception as e:
             logger.error(f"Encryption failed: {e}")
             return None
@@ -68,15 +92,17 @@ class DataEncryption:
     def decrypt(self, encrypted_data: str) -> Optional[str]:
         """Decrypt base64 encoded encrypted data"""
         if not self._fernet:
-            logger.warning("Encryption not available, returning data as-is")
-            return encrypted_data
-        
+            error_msg = f"Encryption not available - {self._init_error or 'initialization failed'}"
+            logger.error(error_msg)
+            logger.error("Cannot decrypt data - returning None")
+            return None
+
         try:
             # Decode and decrypt
             encrypted_bytes = base64.urlsafe_b64decode(encrypted_data.encode())
             decrypted_data = self._fernet.decrypt(encrypted_bytes)
             return decrypted_data.decode()
-        
+
         except Exception as e:
             logger.error(f"Decryption failed: {e}")
             return None

@@ -1,7 +1,7 @@
 import os
 import logging
 from typing import Optional, List
-from pydantic import Field, validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -176,7 +176,14 @@ class Settings(BaseSettings):
         description="Key for data encryption"
     )
 
-    @validator('api_key_secret')
+    # Encryption salt (should be unique per installation)
+    encryption_salt: str = Field(
+        default="",
+        description="Salt for encryption key derivation (auto-generated if empty)"
+    )
+
+    @field_validator('api_key_secret')
+    @classmethod
     def validate_api_key_secret(cls, v):
         """Validate API key secret strength"""
         if v == "your-secret-key-change-in-production":
@@ -185,7 +192,8 @@ class Settings(BaseSettings):
             logger.warning("API key secret should be at least 32 characters long")
         return v
 
-    @validator('encryption_key')
+    @field_validator('encryption_key')
+    @classmethod
     def validate_encryption_key(cls, v):
         """Validate encryption key strength"""
         if v == "your-encryption-key-change-in-production":
@@ -194,14 +202,38 @@ class Settings(BaseSettings):
             logger.warning("Encryption key should be at least 32 characters long")
         return v
 
-    @validator('allowed_origins')
+    @field_validator('encryption_salt')
+    @classmethod
+    def validate_encryption_salt(cls, v):
+        """Validate and generate encryption salt if needed"""
+        if not v:
+            # Use persistent salt manager to get or create salt
+            from app.core.salt_manager import get_persistent_salt
+            v = get_persistent_salt()
+            logger.info("Using persistent encryption salt - salt will be consistent across restarts")
+        else:
+            # Validate provided salt
+            if len(v) < 64:
+                logger.warning("Encryption salt should be at least 64 characters long for security")
+
+            # Validate hex format
+            try:
+                bytes.fromhex(v)
+            except ValueError:
+                raise ValueError("Encryption salt must be a valid hexadecimal string")
+
+        return v
+
+    @field_validator('allowed_origins')
+    @classmethod
     def validate_cors_origins(cls, v):
         """Validate CORS origins"""
         if "*" in v:
             logger.warning("Wildcard CORS origin detected - not recommended for production")
         return v
 
-    @validator('admin_api_keys')
+    @field_validator('admin_api_keys')
+    @classmethod
     def validate_admin_keys(cls, v):
         """Validate admin API keys"""
         if not v:

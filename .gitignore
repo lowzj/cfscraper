@@ -201,3 +201,4 @@ scraper.log
 temp/
 tmp/
 .idea
+.salt
