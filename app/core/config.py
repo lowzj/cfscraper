@@ -207,12 +207,21 @@ class Settings(BaseSettings):
     def validate_encryption_salt(cls, v):
         """Validate and generate encryption salt if needed"""
         if not v:
-            # Generate a random salt if not provided
+            # Generate a random salt if not provided (64-character hex string)
             import secrets
-            v = secrets.token_hex(32)
+            v = secrets.token_hex(32)  # Generates 64 hex characters
             logger.info("Generated new encryption salt - save this value to maintain data compatibility")
-        elif len(v) < 32:
-            logger.warning("Encryption salt should be at least 32 characters long")
+        else:
+            # Validate provided salt
+            if len(v) < 64:
+                logger.warning("Encryption salt should be at least 64 characters long for security")
+
+            # Validate hex format
+            try:
+                bytes.fromhex(v)
+            except ValueError:
+                raise ValueError("Encryption salt must be a valid hexadecimal string")
+
         return v
 
     @field_validator('allowed_origins')

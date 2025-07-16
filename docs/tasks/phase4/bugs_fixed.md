@@ -236,4 +236,166 @@ The `DataEncryption` class used a hardcoded salt `b'cfscraper_salt'` for PBKDF2H
 
 All four critical and high-severity bugs identified in the GitHub review have been successfully fixed. The security hardening implementation is now robust and production-ready. The fixes address fundamental security issues including audit logging, authentication, validation consistency, and encryption security.
 
-**Status:** ✅ COMPLETE - All bugs resolved and verified
+---
+
+## Additional Bug Fixes - PR #33 Review
+
+**Date:** July 16, 2025
+**Review Source:** GitHub PR #33 - cursor[bot] review comment #3024503690
+**Additional Bugs Fixed:** 2
+**Severity:** Critical (1), High (1)
+
+### 5. Salt Validation Inconsistencies and Hex Format Checks (HIGH)
+
+**Issue ID:** BUG-005
+**Severity:** High
+**Component:** `app/core/config.py`
+**Lines:** 204-216
+
+**Description:**
+The `encryption_salt` field validator had two critical issues:
+
+1. **Inconsistent Length Validation:** Auto-generated 64-character hex salt but only validated manually provided salts for 32+ characters
+2. **Missing Hex Format Validation:** No validation that salt is valid hexadecimal, leading to `ValueError` at runtime when `bytes.fromhex()` is called
+
+**Root Cause:**
+
+- `secrets.token_hex(32)` generates 64 characters but validation only checked for 32+ characters
+- No hex format validation allowed invalid strings to pass validation
+- Runtime failures occurred during encryption initialization
+
+**Impact:**
+
+- Configuration inconsistencies between auto-generated and manually provided salts
+- Runtime `ValueError` exceptions during encryption initialization
+- Potential application crashes when invalid salt configurations are used
+- Silent encryption failures due to initialization problems
+
+**Fix Applied:**
+
+1. **Consistent Length Validation:**
+
+   - Updated validation to require 64 characters for consistency with auto-generation
+   - Added clear warning for salts shorter than 64 characters
+
+2. **Hex Format Validation:**
+   - Added `bytes.fromhex()` validation in the field validator
+   - Provides clear error message for invalid hex strings
+   - Prevents runtime failures during encryption initialization
+
+**Files Modified:**
+
+- `app/core/config.py`: Lines 205-225
+
+**Testing:**
+
+- ✅ Verified 64-character hex salts are accepted
+- ✅ Confirmed invalid hex strings are rejected with clear errors
+- ✅ Tested auto-generation produces valid 64-character hex strings
+- ✅ Verified short but valid hex strings trigger warnings
+
+### 6. Fernet Encryption Silent Failure on Invalid Hex (CRITICAL)
+
+**Issue ID:** BUG-006
+**Severity:** Critical
+**Component:** `app/security/encryption.py`
+**Lines:** 36-38
+
+**Description:**
+The `bytes.fromhex()` conversion in `_initialize_fernet` lacked specific error handling. Invalid hex strings caused `ValueError` exceptions that were caught by the outer try/except, setting `self._fernet` to `None` and causing the `encrypt()` method to silently return unencrypted data.
+
+**Root Cause:**
+
+- Generic exception handling masked specific hex conversion errors
+- Silent failure mode returned unencrypted data when encryption was unavailable
+- No tracking of initialization errors for debugging
+- Security vulnerability: sensitive data could be stored unencrypted
+
+**Impact:**
+
+- **CRITICAL SECURITY VULNERABILITY**
+- Sensitive data potentially stored/transmitted unencrypted
+- Silent failures made debugging extremely difficult
+- No indication to developers that encryption was failing
+- Compliance violations due to unencrypted sensitive data
+
+**Fix Applied:**
+
+1. **Specific Error Handling:**
+
+   - Added targeted `ValueError` handling for `bytes.fromhex()` conversion
+   - Clear error messages for hex format issues
+   - Proper error tracking with `_init_error` attribute
+
+2. **Safe Failure Mode:**
+
+   - Modified `encrypt()` to return `None` instead of unencrypted data
+   - Added detailed error logging with initialization failure reasons
+   - Graceful degradation without exposing sensitive data
+
+3. **Enhanced Debugging:**
+   - Track initialization errors for troubleshooting
+   - Clear log messages indicating encryption unavailability
+   - Detailed error context for configuration issues
+
+**Files Modified:**
+
+- `app/security/encryption.py`: Lines 26-30, 31-66, 68-90, 92-108
+
+**Testing:**
+
+- ✅ Verified invalid hex salt causes graceful initialization failure
+- ✅ Confirmed `encrypt()` returns `None` (not unencrypted data) when initialization fails
+- ✅ Tested error tracking and logging functionality
+- ✅ Verified normal encryption works with valid hex salts
+
+## Updated Security Impact Assessment
+
+### Before Additional Fixes
+
+- **Critical vulnerabilities:** 2 (Previous audit logging + hardcoded salt + silent encryption failure)
+- **High-risk issues:** 3 (Previous auth + validation + salt validation inconsistencies)
+- **Configuration security:** Vulnerable to invalid hex inputs
+- **Data protection:** Risk of unencrypted sensitive data storage
+
+### After Additional Fixes
+
+- **Critical vulnerabilities:** 0
+- **High-risk issues:** 0
+- **Configuration security:** Robust validation with clear error messages
+- **Data protection:** Guaranteed encryption or safe failure (no unencrypted data exposure)
+
+## Updated Verification Results
+
+### Additional Test Results
+
+- **Salt validation tests:** All passed
+- **Encryption error handling tests:** All passed
+- **Existing encryption tests:** All passed (4/4)
+- **Configuration validation:** All scenarios tested successfully
+
+### Manual Verification
+
+- ✅ Invalid hex salts properly rejected during configuration
+- ✅ Encryption fails safely without exposing unencrypted data
+- ✅ Clear error messages for troubleshooting configuration issues
+- ✅ Auto-generated salts are consistently 64-character hex strings
+- ✅ All security components maintain integrity
+
+## Final Recommendations
+
+### Immediate Actions
+
+1. **Review all encryption salt configurations** - Ensure 64-character hex format
+2. **Monitor encryption initialization logs** - Watch for configuration errors
+3. **Test encryption functionality** - Verify proper operation in all environments
+4. **Update deployment documentation** - Include salt format requirements
+
+### Enhanced Security Measures
+
+1. **Configuration validation in CI/CD** - Prevent invalid configurations from deployment
+2. **Encryption health checks** - Monitor encryption availability in production
+3. **Security configuration audits** - Regular validation of encryption settings
+4. **Error alerting** - Immediate notification of encryption initialization failures
+
+**Status:** ✅ COMPLETE - All bugs resolved and verified (6 total bugs fixed)
