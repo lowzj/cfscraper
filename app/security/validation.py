@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 import logging
 
-from pydantic import BaseModel, validator, Field
+from pydantic import BaseModel, field_validator, Field, model_validator
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
@@ -262,14 +262,17 @@ def prevent_sql_injection(text: str) -> str:
 class SecureBaseModel(BaseModel):
     """Base model with security validation"""
     
-    @validator('*', pre=True)
-    def validate_security(cls, v):
+    @model_validator(mode='before')
+    @classmethod
+    def validate_security(cls, values):
         """Apply security validation to all fields"""
-        if isinstance(v, str):
-            if not SecurityValidator.is_safe_string(v):
-                raise ValueError("Input contains potentially dangerous content")
-            return sanitize_input(v)
-        return v
+        if isinstance(values, dict):
+            for key, value in values.items():
+                if isinstance(value, str):
+                    if not SecurityValidator.is_safe_string(value):
+                        raise ValueError(f"Field '{key}' contains potentially dangerous content")
+                    values[key] = sanitize_input(value)
+        return values
 
 
 from typing import Annotated
@@ -303,7 +306,8 @@ class SecureScrapeRequest(SecureBaseModel):
     tags: Optional[List[str]] = Field(default=None, max_items=10)
     priority: int = Field(default=0, ge=-10, le=10)
     
-    @validator('tags')
+    @field_validator('tags')
+    @classmethod
     def validate_tags(cls, v):
         if v:
             for tag in v:
@@ -311,7 +315,8 @@ class SecureScrapeRequest(SecureBaseModel):
                     raise ValueError(f"Tag contains dangerous content: {tag}")
         return v
     
-    @validator('data')
+    @field_validator('data')
+    @classmethod
     def validate_data(cls, v):
         if v:
             return sanitize_input(v)

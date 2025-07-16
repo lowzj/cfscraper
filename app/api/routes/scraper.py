@@ -15,6 +15,7 @@ from app.models.job import Job, JobStatus, ScraperType
 from app.models.requests import ScrapeRequest, BulkScrapeRequest
 from app.security.validation import SecureScrapeRequest
 from app.security.authentication import verify_api_key, require_api_key, APIKeyPermission
+from functools import partial
 from app.models.responses import (
     ScrapeResponse, 
     JobStatusResponse, 
@@ -55,7 +56,7 @@ async def create_scrape_job(
     request: SecureScrapeRequest,  # Use secure validation
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    api_key_info = Depends(lambda req: verify_api_key(req, required_permission=APIKeyPermission.WRITE))
+    api_key_info = Depends(partial(require_api_key, required_permission=APIKeyPermission.WRITE))
 ):
     """
     Create a new scraping job

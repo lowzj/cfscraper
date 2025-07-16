@@ -31,11 +31,21 @@ class DataEncryption:
     def _initialize_fernet(self):
         """Initialize Fernet cipher with derived key"""
         try:
+            # Get salt from settings (will be auto-generated if not set)
+            salt = settings.encryption_salt
+            if isinstance(salt, str):
+                # Convert hex string to bytes
+                salt_bytes = bytes.fromhex(salt)
+            else:
+                # Fallback to default salt (should not happen with proper config)
+                salt_bytes = b'cfscraper_default_salt_change_me'
+                logger.warning("Using fallback salt - this is not secure!")
+
             # Derive a proper key from the encryption key
             kdf = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
                 length=32,
-                salt=b'cfscraper_salt',  # In production, use a random salt per installation
+                salt=salt_bytes,
                 iterations=100000,
             )
             key = base64.urlsafe_b64encode(kdf.derive(self.encryption_key.encode()))
