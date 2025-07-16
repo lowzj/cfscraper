@@ -207,10 +207,10 @@ class Settings(BaseSettings):
     def validate_encryption_salt(cls, v):
         """Validate and generate encryption salt if needed"""
         if not v:
-            # Generate a random salt if not provided (64-character hex string)
-            import secrets
-            v = secrets.token_hex(32)  # Generates 64 hex characters
-            logger.info("Generated new encryption salt - save this value to maintain data compatibility")
+            # Use persistent salt manager to get or create salt
+            from app.core.salt_manager import get_persistent_salt
+            v = get_persistent_salt()
+            logger.info("Using persistent encryption salt - salt will be consistent across restarts")
         else:
             # Validate provided salt
             if len(v) < 64:
