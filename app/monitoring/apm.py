@@ -65,9 +65,45 @@ def setup_opentelemetry(
     
     # Jaeger exporter
     if jaeger_endpoint and HAS_JAEGER:
+        # Parse Jaeger endpoint robustly to handle various formats
+        def parse_jaeger_endpoint(endpoint: str) -> tuple[str, int]:
+            """
+            Parse Jaeger endpoint to extract host and port.
+            
+            Supports formats:
+            - http://localhost:14268
+            - localhost:14268
+            - http://localhost (uses default port 14268)
+            - localhost (uses default port 14268)
+            """
+            # Remove protocol if present
+            if "://" in endpoint:
+                endpoint = endpoint.split("://", 1)[1]
+            
+            # Default port for Jaeger
+            default_port = 14268
+            
+            # Check if port is specified
+            if ":" in endpoint:
+                # Split on the last colon to handle IPv6 addresses correctly
+                host_part, port_part = endpoint.rsplit(":", 1)
+                try:
+                    port = int(port_part)
+                except ValueError:
+                    # If port parsing fails, use default
+                    host_part = endpoint
+                    port = default_port
+            else:
+                # No port specified, use default
+                host_part = endpoint
+                port = default_port
+            
+            return host_part, port
+        
+        agent_host, agent_port = parse_jaeger_endpoint(jaeger_endpoint)
         jaeger_exporter = JaegerExporter(
-            agent_host_name=jaeger_endpoint.split("://")[1].split(":")[0],
-            agent_port=int(jaeger_endpoint.split(":")[-1]) if ":" in jaeger_endpoint else 14268,
+            agent_host_name=agent_host,
+            agent_port=agent_port,
         )
         span_processors.append(BatchSpanProcessor(jaeger_exporter))
     
