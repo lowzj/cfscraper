@@ -1,3 +1,4 @@
+import time
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,16 +13,43 @@ from app.utils.stealth_manager import initialize_stealth_system
 from app.utils.rate_limiter import initialize_rate_limiting
 from app.utils.webhooks import initialize_webhook_system, shutdown_webhook_system
 
+# Import monitoring components
+from app.monitoring import (
+    setup_metrics,
+    setup_structured_logging,
+    setup_health_checks,
+    get_metrics_handler
+)
+from app.monitoring.middleware import MonitoringMiddleware
+from app.monitoring.apm import setup_apm_instrumentation
+from app.monitoring.error_tracking import ErrorTracker
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     print("Starting up cfscraper API...")
+
+    # Setup error tracking first
+    ErrorTracker.setup_from_env()
+
+    # Setup monitoring and logging
+    setup_structured_logging(log_level="INFO", enable_json=True)
+    setup_metrics(app_version="1.0.0", app_name="CFScraper API")
+    setup_health_checks()
+
     init_db()  # Initialize database tables
+
+    # Setup APM instrumentation
+    from app.core.database import engine
+    setup_apm_instrumentation(app, engine)
+
     await initialize_proxy_system()  # Initialize proxy rotation system
     await initialize_stealth_system()  # Initialize stealth features
     await initialize_rate_limiting()  # Initialize rate limiting
     await initialize_webhook_system()  # Initialize webhook system
+
+    print("CFScraper API startup complete")
     yield
     # Shutdown
     print("Shutting down cfscraper API...")
@@ -45,6 +73,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add monitoring middleware (before rate limiting)
+app.add_middleware(MonitoringMiddleware, start_time=time.time())
+
 # Add rate limiting middleware
 if settings.rate_limiting_enabled:
     rate_limit_config = RateLimitConfig(
@@ -53,11 +84,11 @@ if settings.rate_limiting_enabled:
     )
     setup_rate_limiting(app, rate_limit_config)
 
-# Add request logging middleware
-app.middleware("http")(log_requests)
-
 # Setup exception handlers
 setup_exception_handlers(app)
+
+# Add Prometheus metrics endpoint
+app.get("/metrics")(get_metrics_handler())
 
 # Import and include API routes
 from app.api.routes import api_router

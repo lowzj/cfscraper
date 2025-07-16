@@ -1,0 +1,76 @@
+# Filebeat configuration for CFScraper API log aggregation
+
+filebeat.inputs:
+  # Docker container logs
+  - type: container
+    paths:
+      - '/var/lib/docker/containers/*/*.log'
+    processors:
+      - add_docker_metadata:
+          host: "unix:///var/run/docker.sock"
+      - decode_json_fields:
+          fields: ["message"]
+          target: ""
+          overwrite_keys: true
+      - drop_fields:
+          fields: ["agent", "ecs", "input", "log.file.path"]
+
+  # Application log files (if mounted)
+  - type: log
+    paths:
+      - '/app/logs/*.log'
+    fields:
+      service: cfscraper-api
+      environment: development
+    fields_under_root: true
+    multiline.pattern: '^\d{4}-\d{2}-\d{2}'
+    multiline.negate: true
+    multiline.match: after
+
+# Processors for log enrichment
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+  - add_cloud_metadata: ~
+  - add_docker_metadata: ~
+  - add_kubernetes_metadata: ~
+
+# Output configuration
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+  index: "cfscraper-logs-%{+yyyy.MM.dd}"
+  template.name: "cfscraper"
+  template.pattern: "cfscraper-*"
+  template.settings:
+    index.number_of_shards: 1
+    index.number_of_replicas: 0
+    index.refresh_interval: "5s"
+
+# Alternative output to Logstash
+# output.logstash:
+#   hosts: ["logstash:5044"]
+
+# Logging configuration
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644
+
+# Monitoring
+monitoring.enabled: true
+monitoring.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+
+# Setup template and ILM
+setup.template.enabled: true
+setup.template.settings:
+  index.number_of_shards: 1
+  index.number_of_replicas: 0
+
+setup.ilm.enabled: true
+setup.ilm.rollover_alias: "cfscraper-logs"
+setup.ilm.pattern: "{now/d}-000001"
+setup.ilm.policy: "cfscraper-policy"

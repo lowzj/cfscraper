@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.models.job import Job, JobStatus
 from app.models.responses import HealthCheckResponse, DetailedHealthCheckResponse, MetricsResponse
 from .common import get_job_queue
+from app.monitoring.health import health_checker
 
 # Try to import psutil for system metrics
 try:
@@ -385,9 +386,9 @@ async def get_service_status(db: Session = Depends(get_db)):
 async def ping():
     """
     Simple ping endpoint
-    
+
     Returns a simple pong response to verify the service is responding.
-    
+
     Returns:
         Pong response
     """
@@ -395,3 +396,62 @@ async def ping():
         "message": "pong",
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+
+@router.get("/ready")
+async def readiness_check():
+    """
+    Kubernetes readiness probe endpoint
+
+    Returns readiness status for the application. This endpoint should
+    return 200 when the application is ready to serve traffic.
+
+    Returns:
+        Readiness status
+    """
+    try:
+        result = await health_checker.get_readiness()
+
+        if result["ready"]:
+            return result
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail=result
+            )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ready": False,
+                "error": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        )
+
+
+@router.get("/live")
+async def liveness_check():
+    """
+    Kubernetes liveness probe endpoint
+
+    Returns liveness status for the application. This endpoint should
+    return 200 when the application is alive and running.
+
+    Returns:
+        Liveness status
+    """
+    try:
+        result = await health_checker.get_basic_health()
+        return result
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "unhealthy",
+                "error": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        )
