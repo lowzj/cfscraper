@@ -1,0 +1,160 @@
+# Prometheus alerting rules for CFScraper API
+
+groups:
+  - name: cfscraper_api_alerts
+    rules:
+      # High error rate alert
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status_code=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+          service: cfscraper-api
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for the last 5 minutes"
+
+      # High response time alert
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: cfscraper-api
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }}s"
+
+      # Service down alert
+      - alert: ServiceDown
+        expr: up{job="cfscraper-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: cfscraper-api
+        annotations:
+          summary: "CFScraper API is down"
+          description: "CFScraper API has been down for more than 1 minute"
+
+      # High job failure rate
+      - alert: HighJobFailureRate
+        expr: rate(jobs_total{status="failed"}[10m]) / rate(jobs_total[10m]) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          service: cfscraper-api
+        annotations:
+          summary: "High job failure rate"
+          description: "Job failure rate is {{ $value | humanizePercentage }} over the last 10 minutes"
+
+      # Queue size too high
+      - alert: HighQueueSize
+        expr: job_queue_size > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: cfscraper-api
+        annotations:
+          summary: "Job queue size is high"
+          description: "Job queue size is {{ $value }}, which may indicate processing delays"
+
+      # Database connection issues
+      - alert: DatabaseConnectionIssues
+        expr: database_connections_active == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: cfscraper-api
+        annotations:
+          summary: "No active database connections"
+          description: "No active database connections detected for more than 2 minutes"
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: system_cpu_usage_percent > 80
+        for: 10m
+        labels:
+          severity: warning
+          service: cfscraper-api
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% for more than 10 minutes"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: system_memory_usage_percent > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: cfscraper-api
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}% for more than 5 minutes"
+
+      # Low proxy availability
+      - alert: LowProxyAvailability
+        expr: active_proxies < 2
+        for: 5m
+        labels:
+          severity: warning
+          service: cfscraper-api
+        annotations:
+          summary: "Low proxy availability"
+          description: "Only {{ $value }} proxies are active, which may affect scraping reliability"
+
+      # High scraper failure rate
+      - alert: HighScraperFailureRate
+        expr: rate(scraper_requests_total{status="failure"}[10m]) / rate(scraper_requests_total[10m]) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+          service: cfscraper-api
+        annotations:
+          summary: "High scraper failure rate"
+          description: "Scraper failure rate is {{ $value | humanizePercentage }} over the last 10 minutes"
+
+      # Webhook delivery failures
+      - alert: WebhookDeliveryFailures
+        expr: rate(webhook_deliveries_total{status="failure"}[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: cfscraper-api
+        annotations:
+          summary: "Webhook delivery failures detected"
+          description: "Webhook delivery failure rate is {{ $value }} per second"
+
+      # Rate limit violations
+      - alert: HighRateLimitViolations
+        expr: rate(rate_limit_violations_total[5m]) > 1
+        for: 2m
+        labels:
+          severity: warning
+          service: cfscraper-api
+        annotations:
+          summary: "High rate limit violations"
+          description: "Rate limit violations are occurring at {{ $value }} per second"
+
+  - name: system_alerts
+    rules:
+      # Disk space alert
+      - alert: HighDiskUsage
+        expr: system_disk_usage_percent > 90
+        for: 5m
+        labels:
+          severity: critical
+          service: cfscraper-api
+        annotations:
+          summary: "High disk usage"
+          description: "Disk usage is {{ $value }}% for more than 5 minutes"
+
+      # Application uptime
+      - alert: ApplicationRestarted
+        expr: app_uptime_seconds < 300
+        for: 1m
+        labels:
+          severity: info
+          service: cfscraper-api
+        annotations:
+          summary: "Application recently restarted"
+          description: "Application uptime is only {{ $value }}s, indicating a recent restart"
