@@ -1,8 +1,9 @@
 """
 Core scraping endpoints
 """
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Response
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Response, Request
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, timezone
@@ -13,13 +14,24 @@ import json
 from app.core.database import get_db
 from app.models.job import Job, JobStatus, ScraperType
 from app.models.requests import ScrapeRequest, BulkScrapeRequest
+from app.security.validation import SecureScrapeRequest
+from app.security.authentication import verify_api_key, require_api_key, APIKeyPermission, APIKeyInfo, security
 from app.models.responses import (
-    ScrapeResponse, 
-    JobStatusResponse, 
-    JobResult, 
+    ScrapeResponse,
+    JobStatusResponse,
+    JobResult,
     BulkScrapeResponse,
     DownloadResponse
 )
+
+
+# Wrapper function for write permission requirement
+async def require_write_permission(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+) -> APIKeyInfo:
+    """Require API key with WRITE permission"""
+    return await require_api_key(request, credentials, APIKeyPermission.WRITE)
 from .common import (
     get_job_queue, 
     get_job_executor,
@@ -50,9 +62,10 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 @router.post("/", response_model=ScrapeResponse)
 async def create_scrape_job(
-    request: ScrapeRequest,
+    request: SecureScrapeRequest,  # Use secure validation
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    api_key_info: APIKeyInfo = Depends(require_write_permission)
 ):
     """
     Create a new scraping job

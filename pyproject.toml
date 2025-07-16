@@ -28,6 +28,7 @@ dependencies = [
     "sentry-sdk>=2.33.0",
     "structlog>=25.4.0",
     "opentelemetry-instrumentation-requests>=0.56b0",
+    "cryptography>=41.0.0",
 ]
 
 [project.optional-dependencies]
