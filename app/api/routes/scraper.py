@@ -13,6 +13,8 @@ import json
 from app.core.database import get_db
 from app.models.job import Job, JobStatus, ScraperType
 from app.models.requests import ScrapeRequest, BulkScrapeRequest
+from app.security.validation import SecureScrapeRequest
+from app.security.authentication import verify_api_key, require_api_key, APIKeyPermission
 from app.models.responses import (
     ScrapeResponse, 
     JobStatusResponse, 
@@ -50,9 +52,10 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 @router.post("/", response_model=ScrapeResponse)
 async def create_scrape_job(
-    request: ScrapeRequest,
+    request: SecureScrapeRequest,  # Use secure validation
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    api_key_info = Depends(lambda req: verify_api_key(req, required_permission=APIKeyPermission.WRITE))
 ):
     """
     Create a new scraping job

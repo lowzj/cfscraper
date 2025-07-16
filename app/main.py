@@ -24,6 +24,10 @@ from app.monitoring.middleware import MonitoringMiddleware
 from app.monitoring.apm import setup_apm_instrumentation
 from app.monitoring.error_tracking import ErrorTracker
 
+# Import security components
+from app.security.headers import SecurityHeadersMiddleware
+from app.security.audit import AuditMiddleware
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -64,14 +68,22 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Setup CORS middleware
+# Setup CORS middleware with secure configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=settings.allowed_origins,  # Use configured origins instead of wildcard
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Add security headers middleware (first)
+if settings.security_headers_enabled:
+    app.add_middleware(SecurityHeadersMiddleware)
+
+# Add audit logging middleware
+if settings.audit_logging_enabled:
+    app.add_middleware(AuditMiddleware)
 
 # Add monitoring middleware (before rate limiting)
 app.add_middleware(MonitoringMiddleware, start_time=time.time())

@@ -1,7 +1,10 @@
 import os
+import logging
 from typing import Optional, List
-from pydantic import Field
+from pydantic import Field, validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -143,6 +146,113 @@ class Settings(BaseSettings):
         description="Tokens that bypass rate limiting"
     )
 
+    # Security settings
+    api_key_secret: str = Field(
+        default="your-secret-key-change-in-production",
+        description="Secret key for API key generation and validation"
+    )
+    api_key_expiry_days: int = Field(
+        default=30,
+        description="Default API key expiry in days"
+    )
+    admin_api_keys: List[str] = Field(
+        default_factory=list,
+        description="List of admin API keys"
+    )
+    allowed_origins: List[str] = Field(
+        default_factory=lambda: ["http://localhost:3000", "http://localhost:8080"],
+        description="Allowed CORS origins"
+    )
+    security_headers_enabled: bool = Field(
+        default=True,
+        description="Enable security headers middleware"
+    )
+    audit_logging_enabled: bool = Field(
+        default=True,
+        description="Enable audit logging"
+    )
+    encryption_key: str = Field(
+        default="your-encryption-key-change-in-production",
+        description="Key for data encryption"
+    )
+
+    @validator('api_key_secret')
+    def validate_api_key_secret(cls, v):
+        """Validate API key secret strength"""
+        if v == "your-secret-key-change-in-production":
+            logger.warning("Using default API key secret - change in production!")
+        if len(v) < 32:
+            logger.warning("API key secret should be at least 32 characters long")
+        return v
+
+    @validator('encryption_key')
+    def validate_encryption_key(cls, v):
+        """Validate encryption key strength"""
+        if v == "your-encryption-key-change-in-production":
+            logger.warning("Using default encryption key - change in production!")
+        if len(v) < 32:
+            logger.warning("Encryption key should be at least 32 characters long")
+        return v
+
+    @validator('allowed_origins')
+    def validate_cors_origins(cls, v):
+        """Validate CORS origins"""
+        if "*" in v:
+            logger.warning("Wildcard CORS origin detected - not recommended for production")
+        return v
+
+    @validator('admin_api_keys')
+    def validate_admin_keys(cls, v):
+        """Validate admin API keys"""
+        if not v:
+            logger.warning("No admin API keys configured")
+        for key in v:
+            if len(key) < 32:
+                logger.warning("Admin API key should be at least 32 characters long")
+        return v
+
+
+def validate_security_configuration():
+    """Validate security configuration on startup"""
+    issues = []
+
+    # Check for default secrets
+    if settings.api_key_secret == "your-secret-key-change-in-production":
+        issues.append("Default API key secret is being used")
+
+    if settings.encryption_key == "your-encryption-key-change-in-production":
+        issues.append("Default encryption key is being used")
+
+    # Check CORS configuration
+    if "*" in settings.allowed_origins:
+        issues.append("Wildcard CORS origin is configured")
+
+    # Check admin configuration
+    if not settings.admin_api_keys:
+        issues.append("No admin API keys are configured")
+
+    # Check rate limiting
+    if not settings.rate_limiting_enabled:
+        issues.append("Rate limiting is disabled")
+
+    # Check security headers
+    if not settings.security_headers_enabled:
+        issues.append("Security headers are disabled")
+
+    # Check audit logging
+    if not settings.audit_logging_enabled:
+        issues.append("Audit logging is disabled")
+
+    if issues:
+        logger.warning(f"Security configuration issues detected: {', '.join(issues)}")
+        if not settings.debug:
+            logger.error("Security issues detected in production mode!")
+
+    return issues
+
 
 # Global settings instance
 settings = Settings()
+
+# Validate configuration on import
+validate_security_configuration()

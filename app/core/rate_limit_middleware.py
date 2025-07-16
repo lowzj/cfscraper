@@ -7,9 +7,10 @@ import time
 from datetime import datetime
 
 from app.utils.rate_limiter import (
-    get_rate_limiter, get_rate_limit_monitor, 
+    get_rate_limiter, get_rate_limit_monitor,
     UserTier, RateLimitType
 )
+from app.security.audit import log_rate_limit_exceeded
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     endpoint=endpoint,
                     user_agent=request.headers.get("user-agent")
                 )
-                
+
+                # Log security event
+                log_rate_limit_exceeded(
+                    ip_address=client_ip,
+                    user_agent=request.headers.get("user-agent", "unknown"),
+                    endpoint=endpoint,
+                    limit_type=rule_id,
+                    request_id=request.headers.get("X-Request-ID")
+                )
+
                 # Return rate limit exceeded response
                 return self._create_rate_limit_response(result)
             
@@ -88,15 +98,30 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     
     def _should_skip_rate_limiting(self, request: Request) -> bool:
         """Check if rate limiting should be skipped for this request"""
+        # Skip paths
         skip_paths = [
             "/health",
             "/docs",
             "/openapi.json",
             "/favicon.ico"
         ]
-        
+
         path = str(request.url.path)
-        return any(path.startswith(skip_path) for skip_path in skip_paths)
+        if any(path.startswith(skip_path) for skip_path in skip_paths):
+            return True
+
+        # Check IP whitelist
+        client_ip = self._get_client_ip(request)
+        from app.core.config import settings
+        if client_ip in settings.admin_ips:
+            return True
+
+        # Check bypass tokens
+        bypass_token = self._get_bypass_token(request)
+        if bypass_token and bypass_token in settings.rate_limit_bypass_tokens:
+            return True
+
+        return False
     
     def _get_client_ip(self, request: Request) -> str:
         """Extract client IP address"""
