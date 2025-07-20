@@ -138,7 +138,7 @@ async def list_jobs(
 @router.post("/search", response_model=JobListResponse)
 async def search_jobs(
     request: JobSearchRequest,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Search jobs with advanced filtering
@@ -154,43 +154,43 @@ async def search_jobs(
         JobListResponse with search results
     """
     try:
-        # Build query
-        query = db.query(Job)
-        
+        # Build async query
+        query = select(Job)
+
         # Apply text search
         if request.query:
-            query = query.filter(
+            query = query.where(
                 or_(
                     Job.url.contains(request.query),
                     Job.task_id.contains(request.query),
                     Job.progress_message.contains(request.query)
                 )
             )
-        
+
         # Apply filters
         if request.status:
-            query = query.filter(Job.status.in_(request.status))
-        
+            query = query.where(Job.status.in_(request.status))
+
         if request.scraper_type:
-            query = query.filter(Job.scraper_type.in_(request.scraper_type))
+            query = query.where(Job.scraper_type.in_(request.scraper_type))
         
         if request.date_from:
             try:
                 date_from = datetime.fromisoformat(request.date_from.replace('Z', '+00:00'))
-                query = query.filter(Job.created_at >= date_from)
+                query = query.where(Job.created_at >= date_from)
             except ValueError:
                 raise HTTPException(
-                    status_code=400, 
+                    status_code=400,
                     detail="Invalid date_from format. Use ISO format."
                 )
-        
+
         if request.date_to:
             try:
                 date_to = datetime.fromisoformat(request.date_to.replace('Z', '+00:00'))
-                query = query.filter(Job.created_at <= date_to)
+                query = query.where(Job.created_at <= date_to)
             except ValueError:
                 raise HTTPException(
-                    status_code=400, 
+                    status_code=400,
                     detail="Invalid date_to format. Use ISO format."
                 )
         
@@ -200,13 +200,22 @@ async def search_jobs(
             query = query.order_by(asc(sort_field))
         else:
             query = query.order_by(desc(sort_field))
-        
-        # Get total count
-        total = query.count()
-        
-        # Apply pagination
+
+        # Get total count and jobs concurrently
+        count_query = select(func.count()).select_from(query.subquery())
+
+        # Execute count and paginated query concurrently
         offset = (request.page - 1) * request.page_size
-        jobs = query.offset(offset).limit(request.page_size).all()
+        paginated_query = query.offset(offset).limit(request.page_size)
+
+        # Use asyncio.gather for concurrent execution
+        count_result, jobs_result = await asyncio.gather(
+            db.execute(count_query),
+            db.execute(paginated_query)
+        )
+
+        total = count_result.scalar()
+        jobs = jobs_result.scalars().all()
         
         # Convert to response format
         job_responses = []

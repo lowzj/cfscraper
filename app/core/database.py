@@ -20,14 +20,12 @@ logger = logging.getLogger(__name__)
 Base = declarative_base()
 
 # Backward compatibility - expose engines from connection manager
-@property
 def engine():
     """Get the synchronous database engine"""
     if not connection_manager._initialized:
         connection_manager.initialize()
     return connection_manager.engine
 
-@property
 def async_engine():
     """Get the asynchronous database engine"""
     if not connection_manager._initialized:
@@ -77,6 +75,11 @@ def get_connection_pool_stats() -> dict:
 def close_db_connections():
     """Close all database connections"""
     connection_manager.close_connections()
+
+
+async def aclose_db_connections():
+    """Close all database connections (async version)"""
+    await connection_manager.aclose_connections()
 
 
 # Backward compatibility functions - these are now handled by connection_manager

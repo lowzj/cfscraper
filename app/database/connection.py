@@ -251,13 +251,36 @@ class DatabaseConnectionManager:
         }
     
     def close_connections(self):
-        """Close all database connections"""
+        """Close all database connections (sync version)"""
         if self.engine:
             self.engine.dispose()
             logger.info("Synchronous database engine disposed")
-        
+
         if self.async_engine:
-            asyncio.create_task(self.async_engine.adispose())
+            # For sync method, we need to schedule the async disposal
+            # This is not ideal but maintains backward compatibility
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're in an async context, create a task
+                    asyncio.create_task(self.async_engine.dispose())
+                else:
+                    # If no loop is running, run it synchronously
+                    loop.run_until_complete(self.async_engine.dispose())
+            except RuntimeError:
+                # No event loop available, create a new one
+                asyncio.run(self.async_engine.dispose())
+            logger.info("Asynchronous database engine disposed")
+
+    async def aclose_connections(self):
+        """Close all database connections (async version)"""
+        if self.engine:
+            self.engine.dispose()
+            logger.info("Synchronous database engine disposed")
+
+        if self.async_engine:
+            await self.async_engine.dispose()
             logger.info("Asynchronous database engine disposed")
 
 
