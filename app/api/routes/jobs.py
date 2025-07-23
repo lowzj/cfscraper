@@ -366,7 +366,7 @@ async def delete_bulk_jobs(
                     await get_job_queue().remove_job(job.task_id)
                     
                     # Delete from database
-                    await db.delete(job)
+                    db.delete(job)
                     deleted_jobs.append(job.task_id)
                     
                 except Exception as e:
