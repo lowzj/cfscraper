@@ -3,7 +3,7 @@ Database connection management with optimized connection pooling.
 
 This module provides:
 - Connection pool configuration and monitoring
-- Async and sync database session management
+- Async database session management
 - Connection leak detection and prevention
 - Performance metrics collection
 """
@@ -17,7 +17,6 @@ from dataclasses import dataclass
 
 from sqlalchemy import create_engine, event, pool
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool, QueuePool
 from prometheus_client import Counter, Histogram, Gauge, Info
 
@@ -60,23 +59,21 @@ class ConnectionPoolConfig:
 
 
 class DatabaseConnectionManager:
-    """Manages database connections with optimized pooling"""
+    """Manages database connections with optimized async-only pooling"""
     
     def __init__(self):
-        self.engine: Optional[object] = None
         self.async_engine: Optional[object] = None
-        self.session_factory: Optional[sessionmaker] = None
         self.async_session_factory: Optional[async_sessionmaker] = None
         self.config = ConnectionPoolConfig.from_settings()
         self._initialized = False
         self._connection_leak_detector = ConnectionLeakDetector()
     
     def initialize(self):
-        """Initialize database engines and session factories"""
+        """Initialize async database engine and session factory"""
         if self._initialized:
             return
         
-        self._create_engines()
+        self._create_async_engine()
         self._setup_monitoring()
         self._initialized = True
         
@@ -86,20 +83,14 @@ class DatabaseConnectionManager:
             f"max_overflow={self.config.max_overflow}"
         )
     
-    def _create_engines(self):
-        """Create both sync and async database engines"""
+    def _create_async_engine(self):
+        """Create async database engine"""
         if settings.database_url.startswith("sqlite"):
-            self._create_sqlite_engines()
+            self._create_sqlite_engine()
         else:
-            self._create_postgresql_engines()
+            self._create_postgresql_engine()
         
-        # Create session factories
-        self.session_factory = sessionmaker(
-            autocommit=False, 
-            autoflush=False, 
-            bind=self.engine
-        )
-        
+        # Create async session factory
         self.async_session_factory = async_sessionmaker(
             bind=self.async_engine,
             class_=AsyncSession,
@@ -108,15 +99,8 @@ class DatabaseConnectionManager:
             expire_on_commit=False,
         )
     
-    def _create_sqlite_engines(self):
-        """Create SQLite engines for development/testing"""
-        self.engine = create_engine(
-            settings.database_url,
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-            echo=self.config.echo,
-        )
-        
+    def _create_sqlite_engine(self):
+        """Create SQLite async engine for development/testing"""
         # SQLite async support
         async_db_url = settings.database_url.replace("sqlite://", "sqlite+aiosqlite://")
         self.async_engine = create_async_engine(
@@ -126,19 +110,8 @@ class DatabaseConnectionManager:
             echo=self.config.echo,
         )
     
-    def _create_postgresql_engines(self):
-        """Create PostgreSQL engines with connection pooling"""
-        self.engine = create_engine(
-            settings.database_url,
-            poolclass=QueuePool,
-            pool_size=self.config.pool_size,
-            max_overflow=self.config.max_overflow,
-            pool_timeout=self.config.pool_timeout,
-            pool_recycle=self.config.pool_recycle,
-            pool_pre_ping=self.config.pool_pre_ping,
-            echo=self.config.echo,
-        )
-        
+    def _create_postgresql_engine(self):
+        """Create PostgreSQL async engine with connection pooling"""
         # Async PostgreSQL engine
         async_db_url = settings.database_url.replace("postgresql://", "postgresql+asyncpg://")
         self.async_engine = create_async_engine(
@@ -154,7 +127,7 @@ class DatabaseConnectionManager:
     
     def _setup_monitoring(self):
         """Setup connection pool monitoring and metrics"""
-        if not self.engine or self.engine.url.drivername.startswith("sqlite"):
+        if not self.async_engine or self.async_engine.url.drivername.startswith("sqlite"):
             return
         
         # Record pool configuration
@@ -165,34 +138,34 @@ class DatabaseConnectionManager:
             'pool_recycle': str(self.config.pool_recycle),
         })
         
-        @event.listens_for(self.engine, "connect")
+        @event.listens_for(self.async_engine.sync_engine, "connect")
         def on_connect(dbapi_connection, connection_record):
             """Track connection creation"""
             db_connections_created.inc()
             self._connection_leak_detector.track_connection(connection_record)
             logger.debug("Database connection created")
         
-        @event.listens_for(self.engine, "close")
+        @event.listens_for(self.async_engine.sync_engine, "close")
         def on_close(dbapi_connection, connection_record):
             """Track connection closure"""
             db_connections_closed.inc()
             self._connection_leak_detector.untrack_connection(connection_record)
             logger.debug("Database connection closed")
         
-        @event.listens_for(self.engine, "checkout")
+        @event.listens_for(self.async_engine.sync_engine, "checkout")
         def on_checkout(dbapi_connection, connection_record, connection_proxy):
             """Track connection checkout"""
             self._update_pool_metrics()
         
-        @event.listens_for(self.engine, "checkin")
+        @event.listens_for(self.async_engine.sync_engine, "checkin")
         def on_checkin(dbapi_connection, connection_record):
             """Track connection checkin"""
             self._update_pool_metrics()
     
     def _update_pool_metrics(self):
         """Update connection pool metrics"""
-        if self.engine and hasattr(self.engine, 'pool'):
-            pool_obj = self.engine.pool
+        if self.async_engine and hasattr(self.async_engine, 'pool'):
+            pool_obj = self.async_engine.pool
             db_connection_pool_size.set(pool_obj.size())
             db_connection_pool_checked_out.set(pool_obj.checkedout())
     
@@ -214,28 +187,12 @@ class DatabaseConnectionManager:
             duration = time.time() - start_time
             db_query_duration.observe(duration)
     
-    def get_session(self):
-        """Get a sync database session"""
-        if not self._initialized:
-            self.initialize()
-        
-        session = self.session_factory()
-        try:
-            yield session
-        except Exception as e:
-            db_connection_errors.inc()
-            logger.error(f"Database session error: {e}")
-            session.rollback()
-            raise
-        finally:
-            session.close()
-    
     def get_pool_stats(self) -> Dict[str, Any]:
         """Get current connection pool statistics"""
-        if not self.engine or self.engine.url.drivername.startswith("sqlite"):
+        if not self.async_engine or self.async_engine.url.drivername.startswith("sqlite"):
             return {"type": "sqlite", "pool_stats": "N/A"}
         
-        pool_obj = self.engine.pool
+        pool_obj = self.async_engine.pool
         return {
             "type": "postgresql",
             "pool_size": pool_obj.size(),
@@ -250,35 +207,8 @@ class DatabaseConnectionManager:
             }
         }
     
-    def close_connections(self):
-        """Close all database connections (sync version)"""
-        if self.engine:
-            self.engine.dispose()
-            logger.info("Synchronous database engine disposed")
-
-        if self.async_engine:
-            # For sync method, we need to schedule the async disposal
-            # This is not ideal but maintains backward compatibility
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # If we're in an async context, create a task
-                    asyncio.create_task(self.async_engine.dispose())
-                else:
-                    # If no loop is running, run it synchronously
-                    loop.run_until_complete(self.async_engine.dispose())
-            except RuntimeError:
-                # No event loop available, create a new one
-                asyncio.run(self.async_engine.dispose())
-            logger.info("Asynchronous database engine disposed")
-
-    async def aclose_connections(self):
-        """Close all database connections (async version)"""
-        if self.engine:
-            self.engine.dispose()
-            logger.info("Synchronous database engine disposed")
-
+    async def close_connections(self):
+        """Close all database connections"""
         if self.async_engine:
             await self.async_engine.dispose()
             logger.info("Asynchronous database engine disposed")
