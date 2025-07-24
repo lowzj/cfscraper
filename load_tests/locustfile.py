@@ -11,13 +11,8 @@ This file provides comprehensive load testing scenarios including:
 import json
 import random
 import time
-from typing import Dict, Any, List
-from urllib.parse import urljoin
 
 from locust import HttpUser, task, between, events
-from locust.env import Environment
-from locust.stats import stats_printer, stats_history
-from locust.log import setup_logging
 
 # Test data for realistic scenarios
 TEST_URLS = [
@@ -44,29 +39,29 @@ USER_AGENTS = [
 
 class CFScraperUser(HttpUser):
     """Base user class for CFScraper API load testing"""
-    
+
     wait_time = between(1, 5)  # Wait 1-5 seconds between tasks
-    
+
     def on_start(self):
         """Called when a user starts"""
         self.api_key = None
         self.active_jobs = []
         self.completed_jobs = []
-        
+
         # Authenticate and get API key (if authentication is implemented)
         # self.authenticate()
-    
+
     def authenticate(self):
         """Authenticate user and get API key"""
         # This would be implemented if authentication is required
         pass
-    
+
     @task(3)
     def submit_scraping_job(self):
         """Submit a new scraping job - most common operation"""
         url = random.choice(TEST_URLS)
         scraper_type = random.choice(SCRAPER_TYPES)
-        
+
         job_data = {
             "url": url,
             "method": "GET",
@@ -77,12 +72,12 @@ class CFScraperUser(HttpUser):
             "tags": [f"load_test_{random.randint(1, 100)}"],
             "priority": random.randint(1, 10)
         }
-        
+
         with self.client.post(
-            "/api/scraper/scrape",
-            json=job_data,
-            headers={"Content-Type": "application/json"},
-            catch_response=True
+                "/api/scraper/scrape",
+                json=job_data,
+                headers={"Content-Type": "application/json"},
+                catch_response=True
         ) as response:
             if response.status_code == 200:
                 try:
@@ -97,28 +92,28 @@ class CFScraperUser(HttpUser):
                     response.failure("Invalid JSON response")
             else:
                 response.failure(f"HTTP {response.status_code}")
-    
+
     @task(2)
     def check_job_status(self):
         """Check status of active jobs"""
         if not self.active_jobs:
             return
-        
+
         task_id = random.choice(self.active_jobs)
-        
+
         with self.client.get(
-            f"/api/jobs/{task_id}",
-            catch_response=True
+                f"/api/jobs/{task_id}",
+                catch_response=True
         ) as response:
             if response.status_code == 200:
                 try:
                     result = response.json()
                     status = result.get("status")
-                    
+
                     if status in ["completed", "failed", "cancelled"]:
                         self.active_jobs.remove(task_id)
                         self.completed_jobs.append(task_id)
-                    
+
                     response.success()
                 except json.JSONDecodeError:
                     response.failure("Invalid JSON response")
@@ -128,7 +123,7 @@ class CFScraperUser(HttpUser):
                 response.success()
             else:
                 response.failure(f"HTTP {response.status_code}")
-    
+
     @task(1)
     def list_jobs(self):
         """List jobs with pagination"""
@@ -138,18 +133,18 @@ class CFScraperUser(HttpUser):
             "sort_by": random.choice(["created_at", "priority", "status"]),
             "sort_order": random.choice(["asc", "desc"])
         }
-        
+
         # Randomly add filters
         if random.random() < 0.3:
             params["status"] = random.choice(["queued", "running", "completed", "failed"])
-        
+
         if random.random() < 0.2:
             params["scraper_type"] = random.choice(SCRAPER_TYPES)
-        
+
         with self.client.get(
-            "/api/jobs/",
-            params=params,
-            catch_response=True
+                "/api/jobs/",
+                params=params,
+                catch_response=True
         ) as response:
             if response.status_code == 200:
                 try:
@@ -162,7 +157,7 @@ class CFScraperUser(HttpUser):
                     response.failure("Invalid JSON response")
             else:
                 response.failure(f"HTTP {response.status_code}")
-    
+
     @task(1)
     def search_jobs(self):
         """Search jobs with advanced filters"""
@@ -172,25 +167,25 @@ class CFScraperUser(HttpUser):
             "page_size": 20,
             "filters": {}
         }
-        
+
         # Add random filters
         if random.random() < 0.4:
             search_data["filters"]["status"] = random.choice(["completed", "failed"])
-        
+
         if random.random() < 0.3:
             search_data["filters"]["scraper_type"] = random.choice(SCRAPER_TYPES)
-        
+
         with self.client.post(
-            "/api/jobs/search",
-            json=search_data,
-            headers={"Content-Type": "application/json"},
-            catch_response=True
+                "/api/jobs/search",
+                json=search_data,
+                headers={"Content-Type": "application/json"},
+                catch_response=True
         ) as response:
             if response.status_code == 200:
                 response.success()
             else:
                 response.failure(f"HTTP {response.status_code}")
-    
+
     @task(1)
     def health_check(self):
         """Check API health"""
@@ -199,7 +194,7 @@ class CFScraperUser(HttpUser):
                 response.success()
             else:
                 response.failure(f"HTTP {response.status_code}")
-    
+
     @task(1)
     def get_metrics(self):
         """Get system metrics"""
@@ -214,15 +209,15 @@ class LightUser(CFScraperUser):
     """Light user with minimal activity"""
     wait_time = between(5, 15)
     weight = 3
-    
+
     @task(5)
     def submit_scraping_job(self):
         super().submit_scraping_job()
-    
+
     @task(2)
     def check_job_status(self):
         super().check_job_status()
-    
+
     @task(1)
     def health_check(self):
         super().health_check()
@@ -232,19 +227,19 @@ class HeavyUser(CFScraperUser):
     """Heavy user with high activity"""
     wait_time = between(0.5, 2)
     weight = 1
-    
+
     @task(10)
     def submit_scraping_job(self):
         super().submit_scraping_job()
-    
+
     @task(5)
     def check_job_status(self):
         super().check_job_status()
-    
+
     @task(3)
     def list_jobs(self):
         super().list_jobs()
-    
+
     @task(2)
     def search_jobs(self):
         super().search_jobs()
@@ -254,16 +249,16 @@ class BurstUser(CFScraperUser):
     """User that creates bursts of activity"""
     wait_time = between(10, 30)
     weight = 1
-    
+
     @task
     def burst_activity(self):
         """Create a burst of requests"""
         burst_size = random.randint(5, 15)
-        
+
         for _ in range(burst_size):
             self.submit_scraping_job()
             time.sleep(random.uniform(0.1, 0.5))
-        
+
         # Check some job statuses
         for _ in range(min(3, len(self.active_jobs))):
             self.check_job_status()
@@ -289,7 +284,7 @@ def on_test_start(environment, **kwargs):
 def on_test_stop(environment, **kwargs):
     """Called when test stops"""
     print("Load test completed!")
-    
+
     # Print summary statistics
     stats = environment.stats
     print(f"\nTest Summary:")
@@ -298,7 +293,7 @@ def on_test_stop(environment, **kwargs):
     print(f"Average response time: {stats.total.avg_response_time:.2f}ms")
     print(f"Max response time: {stats.total.max_response_time:.2f}ms")
     print(f"Requests per second: {stats.total.current_rps:.2f}")
-    
+
     if stats.total.num_requests > 0:
         failure_rate = (stats.total.num_failures / stats.total.num_requests) * 100
         print(f"Failure rate: {failure_rate:.2f}%")
@@ -306,6 +301,7 @@ def on_test_stop(environment, **kwargs):
 
 # Custom load shapes for different test scenarios
 from locust import LoadTestShape
+
 
 class StepLoadShape(LoadTestShape):
     """Step load pattern - gradually increase users"""
@@ -336,11 +332,11 @@ class SpikeLoadShape(LoadTestShape):
         elif run_time < 120:
             return (50, 10)  # Spike
         elif run_time < 180:
-            return (10, 2)   # Back to normal
+            return (10, 2)  # Back to normal
         elif run_time < 240:
-            return (100, 20) # Bigger spike
+            return (100, 20)  # Bigger spike
         elif run_time < 300:
-            return (10, 2)   # Back to normal
+            return (10, 2)  # Back to normal
         else:
             return None
 
@@ -352,14 +348,13 @@ class StressLoadShape(LoadTestShape):
         run_time = self.get_run_time()
 
         if run_time < 60:
-            return (20, 5)   # Warm up
+            return (20, 5)  # Warm up
         elif run_time < 300:
-            return (100, 10) # High load
+            return (100, 10)  # High load
         elif run_time < 360:
-            return (20, 5)   # Cool down
+            return (20, 5)  # Cool down
         else:
             return None
-
 
 # To use a specific load shape, run:
 # locust -f locustfile.py --host=http://localhost:8000 StepLoadShape

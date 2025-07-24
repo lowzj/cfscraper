@@ -3,11 +3,11 @@ API routes initialization
 """
 from fastapi import APIRouter
 
-from .scraper import router as scraper_router
-from .jobs import router as jobs_router
-from .health import router as health_router
-from .export import router as export_router
 from .admin import router as admin_router
+from .export import router as export_router
+from .health import router as health_router
+from .jobs import router as jobs_router
+from .scraper import router as scraper_router
 
 # Create main API router
 api_router = APIRouter()

@@ -1,18 +1,14 @@
 import time
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.core.middleware import setup_exception_handlers, log_requests
-from app.core.rate_limit_middleware import RateLimitMiddleware, setup_rate_limiting, RateLimitConfig
-from app.utils.proxy_manager import initialize_proxy_system, shutdown_proxy_system
-from app.utils.stealth_manager import initialize_stealth_system
-from app.utils.rate_limiter import initialize_rate_limiting
-from app.utils.webhooks import initialize_webhook_system, shutdown_webhook_system
-
+from app.core.middleware import setup_exception_handlers
+from app.core.rate_limit_middleware import setup_rate_limiting, RateLimitConfig
 # Import monitoring components
 from app.monitoring import (
     setup_metrics,
@@ -20,13 +16,16 @@ from app.monitoring import (
     setup_health_checks,
     get_metrics_handler
 )
-from app.monitoring.middleware import MonitoringMiddleware
 from app.monitoring.apm import setup_apm_instrumentation
 from app.monitoring.error_tracking import ErrorTracker
-
+from app.monitoring.middleware import MonitoringMiddleware
+from app.security.audit import AuditMiddleware
 # Import security components
 from app.security.headers import SecurityHeadersMiddleware
-from app.security.audit import AuditMiddleware
+from app.utils.proxy_manager import initialize_proxy_system, shutdown_proxy_system
+from app.utils.rate_limiter import initialize_rate_limiting
+from app.utils.stealth_manager import initialize_stealth_system
+from app.utils.webhooks import initialize_webhook_system, shutdown_webhook_system
 
 
 @asynccontextmanager
@@ -104,6 +103,7 @@ app.get("/metrics")(get_metrics_handler())
 
 # Import and include API routes
 from app.api.routes import api_router
+
 app.include_router(api_router, prefix="/api/v1")
 
 
@@ -188,4 +188,5 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

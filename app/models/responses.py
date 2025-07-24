@@ -1,17 +1,17 @@
 """
 Response models for the CFScraper API
 """
-from typing import Optional, Dict, Any, List, Union
-from pydantic import BaseModel, Field
 from datetime import datetime
-from enum import Enum
+from typing import Optional, Dict, Any, List
+
+from pydantic import BaseModel, Field
 
 from .job import JobStatus, ScraperType
 
 
 class JobResult(BaseModel):
     """Model for job execution results"""
-    
+
     # Response metadata
     status_code: Optional[int] = Field(
         default=None,
@@ -29,7 +29,7 @@ class JobResult(BaseModel):
         default=None,
         description="Content type of the response"
     )
-    
+
     # Response data
     headers: Optional[Dict[str, str]] = Field(
         default_factory=dict,
@@ -39,7 +39,7 @@ class JobResult(BaseModel):
         default=None,
         description="Response content (HTML, JSON, etc.)"
     )
-    
+
     # Extracted data
     text: Optional[str] = Field(
         default=None,
@@ -53,7 +53,7 @@ class JobResult(BaseModel):
         default_factory=list,
         description="Extracted image URLs"
     )
-    
+
     # Metadata
     final_url: Optional[str] = Field(
         default=None,
@@ -63,7 +63,7 @@ class JobResult(BaseModel):
         default=None,
         description="URL to screenshot (if taken)"
     )
-    
+
     # Error information
     error_message: Optional[str] = Field(
         default=None,
@@ -73,7 +73,7 @@ class JobResult(BaseModel):
         default=None,
         description="Type of error that occurred"
     )
-    
+
     class Config:
         schema_extra = {
             "example": {
@@ -99,7 +99,7 @@ class JobResult(BaseModel):
 
 class ScrapeResponse(BaseModel):
     """Response model for scraping job creation"""
-    
+
     job_id: str = Field(
         ...,
         description="Unique job identifier"
@@ -124,7 +124,7 @@ class ScrapeResponse(BaseModel):
         default=None,
         description="Estimated completion time"
     )
-    
+
     class Config:
         schema_extra = {
             "example": {
@@ -140,7 +140,7 @@ class ScrapeResponse(BaseModel):
 
 class JobStatusResponse(BaseModel):
     """Response model for job status requests"""
-    
+
     job_id: str = Field(
         ...,
         description="Unique job identifier"
@@ -153,7 +153,7 @@ class JobStatusResponse(BaseModel):
         ...,
         description="Current job status"
     )
-    
+
     # Progress tracking
     progress: int = Field(
         default=0,
@@ -165,7 +165,7 @@ class JobStatusResponse(BaseModel):
         default=None,
         description="Human-readable progress message"
     )
-    
+
     # Job configuration
     url: Optional[str] = Field(
         default=None,
@@ -179,7 +179,7 @@ class JobStatusResponse(BaseModel):
         default=None,
         description="Scraper type used"
     )
-    
+
     # Timestamps
     created_at: Optional[datetime] = Field(
         default=None,
@@ -193,7 +193,7 @@ class JobStatusResponse(BaseModel):
         default=None,
         description="Job completion timestamp"
     )
-    
+
     # Results
     result: Optional[JobResult] = Field(
         default=None,
@@ -203,7 +203,7 @@ class JobStatusResponse(BaseModel):
         default=None,
         description="Error message (if failed)"
     )
-    
+
     # Metadata
     retry_count: int = Field(
         default=0,
@@ -217,7 +217,7 @@ class JobStatusResponse(BaseModel):
         default=0,
         description="Job priority"
     )
-    
+
     class Config:
         schema_extra = {
             "example": {
@@ -248,7 +248,7 @@ class JobStatusResponse(BaseModel):
 
 class JobListResponse(BaseModel):
     """Response model for job listing"""
-    
+
     jobs: List[JobStatusResponse] = Field(
         ...,
         description="List of jobs"
@@ -277,7 +277,7 @@ class JobListResponse(BaseModel):
         ...,
         description="Whether there are previous pages"
     )
-    
+
     class Config:
         schema_extra = {
             "example": {
@@ -305,7 +305,7 @@ class JobListResponse(BaseModel):
 
 class BulkScrapeResponse(BaseModel):
     """Response model for bulk scraping operations"""
-    
+
     batch_id: str = Field(
         ...,
         description="Unique batch identifier"
@@ -326,7 +326,7 @@ class BulkScrapeResponse(BaseModel):
         ...,
         description="Batch creation timestamp"
     )
-    
+
     class Config:
         schema_extra = {
             "example": {
@@ -344,7 +344,7 @@ class BulkScrapeResponse(BaseModel):
 
 class HealthCheckResponse(BaseModel):
     """Response model for health check"""
-    
+
     status: str = Field(
         ...,
         description="Overall health status"
@@ -361,7 +361,7 @@ class HealthCheckResponse(BaseModel):
         ...,
         description="Service uptime in seconds"
     )
-    
+
     class Config:
         schema_extra = {
             "example": {
@@ -375,7 +375,7 @@ class HealthCheckResponse(BaseModel):
 
 class DetailedHealthCheckResponse(BaseModel):
     """Response model for detailed health check"""
-    
+
     status: str = Field(
         ...,
         description="Overall health status"
@@ -392,19 +392,19 @@ class DetailedHealthCheckResponse(BaseModel):
         ...,
         description="Service uptime in seconds"
     )
-    
+
     # Component status
     components: Dict[str, Dict[str, Any]] = Field(
         ...,
         description="Status of individual components"
     )
-    
+
     # System metrics
     metrics: Dict[str, Any] = Field(
         ...,
         description="System performance metrics"
     )
-    
+
     class Config:
         schema_extra = {
             "example": {
@@ -443,25 +443,25 @@ class DetailedHealthCheckResponse(BaseModel):
 
 class MetricsResponse(BaseModel):
     """Response model for metrics endpoint"""
-    
+
     # Job statistics
     jobs: Dict[str, int] = Field(
         ...,
         description="Job count statistics"
     )
-    
+
     # Performance metrics
     performance: Dict[str, float] = Field(
         ...,
         description="Performance metrics"
     )
-    
+
     # System metrics
     system: Dict[str, Any] = Field(
         ...,
         description="System resource metrics"
     )
-    
+
     # Time-based metrics
     hourly_stats: Dict[str, int] = Field(
         ...,
@@ -471,12 +471,12 @@ class MetricsResponse(BaseModel):
         ...,
         description="Daily job statistics"
     )
-    
+
     timestamp: datetime = Field(
         ...,
         description="Metrics collection timestamp"
     )
-    
+
     class Config:
         schema_extra = {
             "example": {
@@ -514,7 +514,7 @@ class MetricsResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Standard error response model"""
-    
+
     error: str = Field(
         ...,
         description="Error type"
@@ -535,7 +535,7 @@ class ErrorResponse(BaseModel):
         default=None,
         description="Request ID for tracking"
     )
-    
+
     class Config:
         schema_extra = {
             "example": {
@@ -554,7 +554,7 @@ class ErrorResponse(BaseModel):
 
 class DownloadResponse(BaseModel):
     """Response model for file downloads"""
-    
+
     download_url: str = Field(
         ...,
         description="URL to download the file"
@@ -575,7 +575,7 @@ class DownloadResponse(BaseModel):
         default=None,
         description="Download link expiration time"
     )
-    
+
     class Config:
         schema_extra = {
             "example": {

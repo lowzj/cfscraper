@@ -7,8 +7,8 @@ Create Date: 2025-01-10 12:00:00.000000
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import sqlite
 
 # revision identifiers, used by Alembic.
@@ -22,10 +22,10 @@ def upgrade() -> None:
     """Add tags and priority columns to jobs table."""
     # Add tags column (JSON field for list of strings)
     op.add_column('jobs', sa.Column('tags', sqlite.JSON(), nullable=True))
-    
+
     # Add priority column (integer field with default 0)  
     op.add_column('jobs', sa.Column('priority', sa.Integer(), nullable=True))
-    
+
     # Update existing rows to have default values
     op.execute("UPDATE jobs SET tags = '[]' WHERE tags IS NULL")
     op.execute("UPDATE jobs SET priority = 0 WHERE priority IS NULL")
@@ -34,4 +34,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Remove tags and priority columns from jobs table."""
     op.drop_column('jobs', 'priority')
-    op.drop_column('jobs', 'tags') 
+    op.drop_column('jobs', 'tags')

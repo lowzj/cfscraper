@@ -2,15 +2,15 @@
 Request models for the CFScraper API
 """
 from typing import Optional, Dict, Any, List
+
 from pydantic import BaseModel, Field, HttpUrl, field_validator
-from enum import Enum
 
 from .job import ScraperType
 
 
 class ScrapeConfig(BaseModel):
     """Configuration for scraping operations"""
-    
+
     # Request configuration
     timeout: Optional[int] = Field(
         default=30,
@@ -30,7 +30,7 @@ class ScrapeConfig(BaseModel):
         le=60,
         description="Delay between retries in seconds (0-60)"
     )
-    
+
     # Browser configuration (for Selenium)
     headless: bool = Field(
         default=True,
@@ -44,19 +44,19 @@ class ScrapeConfig(BaseModel):
         default="1920,1080",
         description="Browser window size (width,height)"
     )
-    
+
     # Proxy configuration
     proxy: Optional[str] = Field(
         default=None,
         description="Proxy URL (http://user:pass@host:port)"
     )
-    
+
     # CloudFlare bypass configuration
     bypass_cloudflare: bool = Field(
         default=True,
         description="Enable CloudFlare bypass"
     )
-    
+
     # Content filtering
     extract_text: bool = Field(
         default=False,
@@ -70,7 +70,7 @@ class ScrapeConfig(BaseModel):
         default=False,
         description="Extract image URLs from the page"
     )
-    
+
     # JavaScript execution
     wait_for_selector: Optional[str] = Field(
         default=None,
@@ -80,7 +80,7 @@ class ScrapeConfig(BaseModel):
         default=None,
         description="JavaScript code to execute on the page"
     )
-    
+
     @field_validator('window_size')
     def validate_window_size(cls, v):
         if v and ',' in v:
@@ -115,13 +115,13 @@ class ScrapeConfig(BaseModel):
 
 class ScrapeRequest(BaseModel):
     """Request model for scraping jobs"""
-    
+
     # Required fields
     url: HttpUrl = Field(
         ...,
         description="URL to scrape (must be valid HTTP/HTTPS URL)"
     )
-    
+
     # Optional request configuration
     method: str = Field(
         default="GET",
@@ -139,7 +139,7 @@ class ScrapeRequest(BaseModel):
         default_factory=dict,
         description="URL query parameters"
     )
-    
+
     # Scraper configuration
     scraper_type: ScraperType = Field(
         default=ScraperType.CLOUDSCRAPER,
@@ -149,7 +149,7 @@ class ScrapeRequest(BaseModel):
         default_factory=ScrapeConfig,
         description="Scraping configuration options"
     )
-    
+
     # Job metadata
     tags: Optional[List[str]] = Field(
         default_factory=list,
@@ -166,14 +166,14 @@ class ScrapeRequest(BaseModel):
         default=None,
         description="URL to POST job completion notification"
     )
-    
+
     @field_validator('method')
     def validate_method(cls, v):
         allowed_methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']
         if v.upper() not in allowed_methods:
             raise ValueError(f"Method must be one of: {', '.join(allowed_methods)}")
         return v.upper()
-    
+
     @field_validator('tags')
     def validate_tags(cls, v):
         if v and len(v) > 10:
@@ -209,14 +209,14 @@ class ScrapeRequest(BaseModel):
 
 class BulkScrapeRequest(BaseModel):
     """Request model for bulk scraping operations"""
-    
+
     jobs: List[ScrapeRequest] = Field(
         ...,
         min_length=1,
         max_length=100,
         description="List of scraping jobs (max 100)"
     )
-    
+
     # Bulk operation settings
     parallel_limit: int = Field(
         default=5,
@@ -228,7 +228,7 @@ class BulkScrapeRequest(BaseModel):
         default=False,
         description="Stop all jobs if one fails"
     )
-    
+
     class Config:
         schema_extra = {
             "example": {
@@ -239,7 +239,7 @@ class BulkScrapeRequest(BaseModel):
                         "tags": ["bulk-job-1"]
                     },
                     {
-                        "url": "https://example.com/page2", 
+                        "url": "https://example.com/page2",
                         "scraper_type": "selenium",
                         "tags": ["bulk-job-2"]
                     }
@@ -252,7 +252,7 @@ class BulkScrapeRequest(BaseModel):
 
 class JobSearchRequest(BaseModel):
     """Request model for job search"""
-    
+
     query: Optional[str] = Field(
         default=None,
         description="Search query (URL, job ID, or text)"
@@ -277,7 +277,7 @@ class JobSearchRequest(BaseModel):
         default=None,
         description="Filter jobs created before this date (ISO format)"
     )
-    
+
     # Pagination
     page: int = Field(
         default=1,
@@ -290,7 +290,7 @@ class JobSearchRequest(BaseModel):
         le=100,
         description="Items per page (1-100)"
     )
-    
+
     # Sorting
     sort_by: str = Field(
         default="created_at",
@@ -300,20 +300,20 @@ class JobSearchRequest(BaseModel):
         default="desc",
         description="Sort order (asc, desc)"
     )
-    
+
     @field_validator('sort_by')
     def validate_sort_by(cls, v):
         allowed_fields = ['created_at', 'updated_at', 'priority', 'status']
         if v not in allowed_fields:
             raise ValueError(f"Sort field must be one of: {', '.join(allowed_fields)}")
         return v
-    
+
     @field_validator('sort_order')
     def validate_sort_order(cls, v):
         if v.lower() not in ['asc', 'desc']:
             raise ValueError("Sort order must be 'asc' or 'desc'")
         return v.lower()
-    
+
     class Config:
         schema_extra = {
             "example": {

@@ -1,10 +1,11 @@
 """
 Common utilities for API routes
 """
-from fastapi import HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from typing import Optional
+
+from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.job import Job, JobStatus
 from app.models.responses import JobResult, JobStatusResponse
@@ -13,6 +14,7 @@ from app.utils.queue import JobQueue, create_job_queue
 # Try to import executor, but handle missing dependencies
 try:
     from app.utils.executor import AsyncJobExecutor
+
     job_queue = create_job_queue()
     job_executor = AsyncJobExecutor(job_queue)
 except Exception:
@@ -72,7 +74,7 @@ def build_job_status_response(job: Job, queue_status: Optional[JobStatus] = None
     result = None
     if job.result:
         result = build_job_result(job.result)
-    
+
     return JobStatusResponse(
         job_id=job.task_id,
         task_id=job.task_id,
@@ -126,7 +128,7 @@ def validate_job_completed(job: Job) -> None:
     """
     if job.status != JobStatus.COMPLETED:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail=f"Job is not completed. Current status: {job.status}"
         )
 
@@ -143,7 +145,7 @@ def validate_job_has_result(job: Job) -> None:
     """
     if not job.result:
         raise HTTPException(
-            status_code=404, 
+            status_code=404,
             detail="Job result not found"
         )
 
@@ -161,8 +163,8 @@ def handle_route_exception(e: Exception, operation: str) -> HTTPException:
     """
     if isinstance(e, HTTPException):
         return e
-    
+
     return HTTPException(
-        status_code=500, 
+        status_code=500,
         detail=f"Failed to {operation}: {str(e)}"
-    ) 
+    )

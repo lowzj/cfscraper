@@ -2,17 +2,16 @@
 Structured JSON logging for CFScraper API
 """
 
-import json
 import logging
 import sys
 import uuid
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
-from contextvars import ContextVar
 
 import structlog
+from structlog.processors import JSONRenderer, add_log_level, StackInfoRenderer
 from structlog.stdlib import LoggerFactory
-from structlog.processors import JSONRenderer, TimeStamper, add_log_level, StackInfoRenderer
 
 # Context variables for request correlation
 request_id_context: ContextVar[Optional[str]] = ContextVar('request_id', default=None)
@@ -25,15 +24,15 @@ def add_correlation_id(logger, method_name, event_dict):
     request_id = request_id_context.get()
     if request_id:
         event_dict['request_id'] = request_id
-    
+
     user_id = user_id_context.get()
     if user_id:
         event_dict['user_id'] = user_id
-    
+
     job_id = job_id_context.get()
     if job_id:
         event_dict['job_id'] = job_id
-    
+
     return event_dict
 
 
@@ -66,26 +65,26 @@ def setup_structured_logging(log_level: str = "INFO", enable_json: bool = True):
         add_log_level,
         StackInfoRenderer(),
     ]
-    
+
     if enable_json:
         processors.append(JSONRenderer())
     else:
         processors.append(structlog.dev.ConsoleRenderer())
-    
+
     structlog.configure(
         processors=processors,
         wrapper_class=structlog.stdlib.BoundLogger,
         logger_factory=LoggerFactory(),
         cache_logger_on_first_use=True,
     )
-    
+
     # Configure standard library logging
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
         level=getattr(logging, log_level.upper())
     )
-    
+
     # Set log levels for noisy libraries
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -106,10 +105,10 @@ def get_logger(name: str = None) -> structlog.stdlib.BoundLogger:
 
 
 def log_with_context(
-    logger: structlog.stdlib.BoundLogger,
-    level: str,
-    message: str,
-    **kwargs
+        logger: structlog.stdlib.BoundLogger,
+        level: str,
+        message: str,
+        **kwargs
 ) -> None:
     """
     Log a message with additional context
@@ -126,22 +125,22 @@ def log_with_context(
 
 class RequestContextMiddleware:
     """Middleware to set request context for logging"""
-    
+
     def __init__(self, app):
         self.app = app
-    
+
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
             # Generate request ID
             request_id = str(uuid.uuid4())
             request_id_context.set(request_id)
-            
+
             # Extract user ID from headers if available
             headers = dict(scope.get("headers", []))
             user_id = headers.get(b"x-user-id")
             if user_id:
                 user_id_context.set(user_id.decode())
-        
+
         await self.app(scope, receive, send)
 
 
@@ -177,17 +176,17 @@ def clear_context():
 
 class StructuredLogger:
     """Enhanced structured logger with common patterns"""
-    
+
     def __init__(self, name: str = None):
         self.logger = get_logger(name)
-    
+
     def log_request_start(
-        self,
-        method: str,
-        url: str,
-        user_agent: str = None,
-        ip_address: str = None,
-        **kwargs
+            self,
+            method: str,
+            url: str,
+            user_agent: str = None,
+            ip_address: str = None,
+            **kwargs
     ):
         """Log request start"""
         self.logger.info(
@@ -198,14 +197,14 @@ class StructuredLogger:
             ip_address=ip_address,
             **kwargs
         )
-    
+
     def log_request_end(
-        self,
-        method: str,
-        url: str,
-        status_code: int,
-        response_time: float,
-        **kwargs
+            self,
+            method: str,
+            url: str,
+            status_code: int,
+            response_time: float,
+            **kwargs
     ):
         """Log request completion"""
         self.logger.info(
@@ -216,7 +215,7 @@ class StructuredLogger:
             response_time=response_time,
             **kwargs
         )
-    
+
     def log_job_start(self, job_id: str, job_type: str, **kwargs):
         """Log job start"""
         set_job_context(job_id)
@@ -226,14 +225,14 @@ class StructuredLogger:
             job_type=job_type,
             **kwargs
         )
-    
+
     def log_job_end(
-        self,
-        job_id: str,
-        job_type: str,
-        status: str,
-        duration: float,
-        **kwargs
+            self,
+            job_id: str,
+            job_type: str,
+            status: str,
+            duration: float,
+            **kwargs
     ):
         """Log job completion"""
         self.logger.info(
@@ -244,14 +243,14 @@ class StructuredLogger:
             duration=duration,
             **kwargs
         )
-    
+
     def log_scraper_request(
-        self,
-        scraper_type: str,
-        url: str,
-        status: str,
-        response_time: float = None,
-        **kwargs
+            self,
+            scraper_type: str,
+            url: str,
+            status: str,
+            response_time: float = None,
+            **kwargs
     ):
         """Log scraper request"""
         self.logger.info(
@@ -262,14 +261,14 @@ class StructuredLogger:
             response_time=response_time,
             **kwargs
         )
-    
+
     def log_proxy_usage(
-        self,
-        proxy_id: str,
-        url: str,
-        status: str,
-        response_time: float = None,
-        **kwargs
+            self,
+            proxy_id: str,
+            url: str,
+            status: str,
+            response_time: float = None,
+            **kwargs
     ):
         """Log proxy usage"""
         self.logger.info(
@@ -280,13 +279,13 @@ class StructuredLogger:
             response_time=response_time,
             **kwargs
         )
-    
+
     def log_webhook_delivery(
-        self,
-        webhook_url: str,
-        status: str,
-        duration: float = None,
-        **kwargs
+            self,
+            webhook_url: str,
+            status: str,
+            duration: float = None,
+            **kwargs
     ):
         """Log webhook delivery"""
         self.logger.info(
@@ -296,7 +295,7 @@ class StructuredLogger:
             duration=duration,
             **kwargs
         )
-    
+
     def log_error(self, error: Exception, context: Dict[str, Any] = None, **kwargs):
         """Log error with context"""
         error_context = {
@@ -305,19 +304,19 @@ class StructuredLogger:
             **(context or {}),
             **kwargs
         }
-        
+
         self.logger.error(
             "Error occurred",
             **error_context,
             exc_info=True
         )
-    
+
     def log_security_event(
-        self,
-        event_type: str,
-        severity: str,
-        description: str,
-        **kwargs
+            self,
+            event_type: str,
+            severity: str,
+            description: str,
+            **kwargs
     ):
         """Log security-related events"""
         self.logger.warning(
@@ -327,13 +326,13 @@ class StructuredLogger:
             description=description,
             **kwargs
         )
-    
+
     def log_performance_metric(
-        self,
-        metric_name: str,
-        value: float,
-        unit: str = "seconds",
-        **kwargs
+            self,
+            metric_name: str,
+            value: float,
+            unit: str = "seconds",
+            **kwargs
     ):
         """Log performance metrics"""
         self.logger.info(

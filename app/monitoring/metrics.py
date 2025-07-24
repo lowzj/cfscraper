@@ -3,18 +3,18 @@ Prometheus metrics collection for CFScraper API
 """
 
 import time
-from typing import Dict, Any, Optional
+from typing import Optional
+
+from fastapi.responses import PlainTextResponse
 from prometheus_client import (
-    CollectorRegistry, 
-    Counter, 
-    Histogram, 
-    Gauge, 
+    CollectorRegistry,
+    Counter,
+    Histogram,
+    Gauge,
     Info,
     generate_latest,
     CONTENT_TYPE_LATEST
 )
-from fastapi import Response
-from fastapi.responses import PlainTextResponse
 
 # Create a custom registry for our metrics
 metrics_registry = CollectorRegistry()
@@ -217,7 +217,7 @@ def record_request_metrics(method: str, endpoint: str, status_code: int, duratio
         endpoint=endpoint,
         status_code=str(status_code)
     ).inc()
-    
+
     http_request_duration_seconds.labels(
         method=method,
         endpoint=endpoint
@@ -237,7 +237,7 @@ def record_job_metrics(job_type: str, status: str, duration: Optional[float] = N
         job_type=job_type,
         status=status
     ).inc()
-    
+
     if duration is not None:
         job_duration_seconds.labels(job_type=job_type).observe(duration)
 
@@ -255,7 +255,7 @@ def record_scraper_metrics(scraper_type: str, status: str, response_time: Option
         scraper_type=scraper_type,
         status=status
     ).inc()
-    
+
     if response_time is not None:
         scraper_response_time_seconds.labels(scraper_type=scraper_type).observe(response_time)
 
@@ -273,7 +273,7 @@ def record_proxy_metrics(proxy_id: str, status: str, response_time: Optional[flo
         proxy_id=proxy_id,
         status=status
     ).inc()
-    
+
     if response_time is not None:
         proxy_response_time_seconds.labels(proxy_id=proxy_id).observe(response_time)
 
@@ -291,7 +291,7 @@ def record_webhook_metrics(webhook_url: str, status: str, duration: Optional[flo
         webhook_url=webhook_url,
         status=status
     ).inc()
-    
+
     if duration is not None:
         webhook_delivery_duration_seconds.labels(webhook_url=webhook_url).observe(duration)
 
@@ -351,11 +351,12 @@ def get_metrics_handler():
     Returns:
         FastAPI response with Prometheus metrics
     """
+
     def metrics_endpoint():
         metrics_data = generate_latest(metrics_registry)
         return PlainTextResponse(
             content=metrics_data,
             media_type=CONTENT_TYPE_LATEST
         )
-    
+
     return metrics_endpoint

@@ -9,16 +9,15 @@ This module provides:
 """
 
 import logging
-import asyncio
 import time
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Optional, Dict, Any
 from dataclasses import dataclass
+from typing import AsyncGenerator, Optional, Dict, Any
 
-from sqlalchemy import create_engine, event, pool
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import StaticPool, QueuePool
 from prometheus_client import Counter, Histogram, Gauge, Info
+from sqlalchemy import event, pool
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.core.config import settings
 
@@ -44,7 +43,7 @@ class ConnectionPoolConfig:
     pool_recycle: int = 3600
     pool_pre_ping: bool = True
     echo: bool = False
-    
+
     @classmethod
     def from_settings(cls) -> 'ConnectionPoolConfig':
         """Create configuration from application settings"""
@@ -60,36 +59,36 @@ class ConnectionPoolConfig:
 
 class DatabaseConnectionManager:
     """Manages database connections with optimized async-only pooling"""
-    
+
     def __init__(self):
         self.async_engine: Optional[object] = None
         self.async_session_factory: Optional[async_sessionmaker] = None
         self.config = ConnectionPoolConfig.from_settings()
         self._initialized = False
         self._connection_leak_detector = ConnectionLeakDetector()
-    
+
     def initialize(self):
         """Initialize async database engine and session factory"""
         if self._initialized:
             return
-        
+
         self._create_async_engine()
         self._setup_monitoring()
         self._initialized = True
-        
+
         logger.info(
             f"Database connection manager initialized with "
             f"pool_size={self.config.pool_size}, "
             f"max_overflow={self.config.max_overflow}"
         )
-    
+
     def _create_async_engine(self):
         """Create async database engine"""
         if settings.database_url.startswith("sqlite"):
             self._create_sqlite_engine()
         else:
             self._create_postgresql_engine()
-        
+
         # Create async session factory
         self.async_session_factory = async_sessionmaker(
             bind=self.async_engine,
@@ -98,7 +97,7 @@ class DatabaseConnectionManager:
             autoflush=False,
             expire_on_commit=False,
         )
-    
+
     def _create_sqlite_engine(self):
         """Create SQLite async engine for development/testing"""
         # SQLite async support
@@ -109,7 +108,7 @@ class DatabaseConnectionManager:
             poolclass=StaticPool,
             echo=self.config.echo,
         )
-    
+
     def _create_postgresql_engine(self):
         """Create PostgreSQL async engine with connection pooling"""
         # Async PostgreSQL engine
@@ -124,12 +123,12 @@ class DatabaseConnectionManager:
             pool_pre_ping=self.config.pool_pre_ping,
             echo=self.config.echo,
         )
-    
+
     def _setup_monitoring(self):
         """Setup connection pool monitoring and metrics"""
         if not self.async_engine or self.async_engine.url.drivername.startswith("sqlite"):
             return
-        
+
         # Record pool configuration
         db_pool_info.info({
             'pool_size': str(self.config.pool_size),
@@ -137,44 +136,44 @@ class DatabaseConnectionManager:
             'pool_timeout': str(self.config.pool_timeout),
             'pool_recycle': str(self.config.pool_recycle),
         })
-        
+
         @event.listens_for(self.async_engine.sync_engine, "connect")
         def on_connect(dbapi_connection, connection_record):
             """Track connection creation"""
             db_connections_created.inc()
             self._connection_leak_detector.track_connection(connection_record)
             logger.debug("Database connection created")
-        
+
         @event.listens_for(self.async_engine.sync_engine, "close")
         def on_close(dbapi_connection, connection_record):
             """Track connection closure"""
             db_connections_closed.inc()
             self._connection_leak_detector.untrack_connection(connection_record)
             logger.debug("Database connection closed")
-        
+
         @event.listens_for(self.async_engine.sync_engine, "checkout")
         def on_checkout(dbapi_connection, connection_record, connection_proxy):
             """Track connection checkout"""
             self._update_pool_metrics()
-        
+
         @event.listens_for(self.async_engine.sync_engine, "checkin")
         def on_checkin(dbapi_connection, connection_record):
             """Track connection checkin"""
             self._update_pool_metrics()
-    
+
     def _update_pool_metrics(self):
         """Update connection pool metrics"""
         if self.async_engine and hasattr(self.async_engine, 'pool'):
             pool_obj = self.async_engine.pool
             db_connection_pool_size.set(pool_obj.size())
             db_connection_pool_checked_out.set(pool_obj.checkedout())
-    
+
     @asynccontextmanager
     async def get_async_session(self) -> AsyncGenerator[AsyncSession, None]:
         """Get an async database session"""
         if not self._initialized:
             self.initialize()
-        
+
         start_time = time.time()
         try:
             async with self.async_session_factory() as session:
@@ -186,12 +185,12 @@ class DatabaseConnectionManager:
         finally:
             duration = time.time() - start_time
             db_query_duration.observe(duration)
-    
+
     def get_pool_stats(self) -> Dict[str, Any]:
         """Get current connection pool statistics"""
         if not self.async_engine or self.async_engine.url.drivername.startswith("sqlite"):
             return {"type": "sqlite", "pool_stats": "N/A"}
-        
+
         pool_obj = self.async_engine.pool
         return {
             "type": "postgresql",
@@ -206,7 +205,7 @@ class DatabaseConnectionManager:
                 "pool_recycle": self.config.pool_recycle,
             }
         }
-    
+
     async def close_connections(self):
         """Close all database connections"""
         if self.async_engine:
@@ -216,38 +215,38 @@ class DatabaseConnectionManager:
 
 class ConnectionLeakDetector:
     """Detects and reports connection leaks"""
-    
+
     def __init__(self):
         self.active_connections = {}
         self.max_connection_age = 3600  # 1 hour
-    
+
     def track_connection(self, connection_record):
         """Track a new connection"""
         self.active_connections[id(connection_record)] = {
             'created_at': time.time(),
             'record': connection_record
         }
-    
+
     def untrack_connection(self, connection_record):
         """Stop tracking a connection"""
         self.active_connections.pop(id(connection_record), None)
-    
+
     def check_for_leaks(self):
         """Check for connection leaks and log warnings"""
         current_time = time.time()
         leaked_connections = []
-        
+
         for conn_id, conn_info in self.active_connections.items():
             age = current_time - conn_info['created_at']
             if age > self.max_connection_age:
                 leaked_connections.append((conn_id, age))
-        
+
         if leaked_connections:
             logger.warning(
                 f"Detected {len(leaked_connections)} potentially leaked connections. "
                 f"Ages: {[f'{age:.1f}s' for _, age in leaked_connections]}"
             )
-        
+
         return leaked_connections
 
 

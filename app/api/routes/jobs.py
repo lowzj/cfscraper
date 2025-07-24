@@ -1,23 +1,21 @@
 """
 Job management endpoints with async optimization
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import and_, or_, desc, asc, select, func, update
-from typing import Optional, List
-from datetime import datetime, timedelta, timezone
-import uuid
 import asyncio
+from datetime import datetime, timedelta, timezone
+from typing import Optional, List
 
-from app.core.database import get_db, get_async_db_dependency
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_, desc, asc, select, func, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_async_db_dependency
 from app.models.job import Job, JobStatus, ScraperType
 from app.models.requests import JobSearchRequest
-from app.models.responses import JobListResponse, JobStatusResponse, JobResult
+from app.models.responses import JobListResponse
 from .common import (
     get_job_queue,
     get_job_executor,
-    build_job_result,
     build_job_status_response,
     handle_route_exception
 )
@@ -27,23 +25,23 @@ router = APIRouter()
 
 @router.get("/", response_model=JobListResponse)
 async def list_jobs(
-    # Filtering parameters
-    status: Optional[List[JobStatus]] = Query(None, description="Filter by job status"),
-    scraper_type: Optional[List[ScraperType]] = Query(None, description="Filter by scraper type"),
-    url_contains: Optional[str] = Query(None, description="Filter by URL containing text"),
-    tags: Optional[List[str]] = Query(None, description="Filter by tags"),
-    date_from: Optional[datetime] = Query(None, description="Filter jobs created after this date"),
-    date_to: Optional[datetime] = Query(None, description="Filter jobs created before this date"),
+        # Filtering parameters
+        status: Optional[List[JobStatus]] = Query(None, description="Filter by job status"),
+        scraper_type: Optional[List[ScraperType]] = Query(None, description="Filter by scraper type"),
+        url_contains: Optional[str] = Query(None, description="Filter by URL containing text"),
+        tags: Optional[List[str]] = Query(None, description="Filter by tags"),
+        date_from: Optional[datetime] = Query(None, description="Filter jobs created after this date"),
+        date_to: Optional[datetime] = Query(None, description="Filter jobs created before this date"),
 
-    # Pagination
-    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page (1-100)"),
+        # Pagination
+        page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+        page_size: int = Query(20, ge=1, le=100, description="Items per page (1-100)"),
 
-    # Sorting
-    sort_by: str = Query("created_at", description="Sort field"),
-    sort_order: str = Query("desc", description="Sort order (asc, desc)"),
+        # Sorting
+        sort_by: str = Query("created_at", description="Sort field"),
+        sort_order: str = Query("desc", description="Sort order (asc, desc)"),
 
-    db: AsyncSession = Depends(get_async_db_dependency)
+        db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     List jobs with optional filtering and pagination
@@ -137,8 +135,8 @@ async def list_jobs(
 
 @router.post("/search", response_model=JobListResponse)
 async def search_jobs(
-    request: JobSearchRequest,
-    db: AsyncSession = Depends(get_async_db_dependency)
+        request: JobSearchRequest,
+        db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Search jobs with advanced filtering
@@ -173,7 +171,7 @@ async def search_jobs(
 
         if request.scraper_type:
             query = query.where(Job.scraper_type.in_(request.scraper_type))
-        
+
         if request.date_from:
             try:
                 date_from = datetime.fromisoformat(request.date_from.replace('Z', '+00:00'))
@@ -193,7 +191,7 @@ async def search_jobs(
                     status_code=400,
                     detail="Invalid date_to format. Use ISO format."
                 )
-        
+
         # Apply sorting
         sort_field = getattr(Job, request.sort_by, Job.created_at)
         if request.sort_order == "asc":
@@ -216,18 +214,18 @@ async def search_jobs(
 
         total = count_result.scalar()
         jobs = jobs_result.scalars().all()
-        
+
         # Convert to response format
         job_responses = []
         for job in jobs:
             job_response = build_job_status_response(job)
             job_responses.append(job_response)
-        
+
         # Calculate pagination info
         total_pages = (total + request.page_size - 1) // request.page_size
         has_next = request.page < total_pages
         has_previous = request.page > 1
-        
+
         return JobListResponse(
             jobs=job_responses,
             total=total,
@@ -237,15 +235,15 @@ async def search_jobs(
             has_next=has_next,
             has_previous=has_previous
         )
-        
+
     except Exception as e:
         raise handle_route_exception(e, "search jobs")
 
 
 @router.post("/bulk/cancel")
 async def cancel_bulk_jobs(
-    job_ids: List[str],
-    db: AsyncSession = Depends(get_async_db_dependency)
+        job_ids: List[str],
+        db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Cancel multiple jobs in bulk
@@ -262,26 +260,26 @@ async def cancel_bulk_jobs(
     try:
         if len(job_ids) > 100:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Maximum 100 jobs can be cancelled at once"
             )
-        
+
         # Get jobs from database
         jobs_result = await db.execute(select(Job).where(Job.task_id.in_(job_ids)))
         jobs = jobs_result.scalars().all()
-        
+
         if not jobs:
             raise HTTPException(status_code=404, detail="No jobs found")
-        
+
         cancelled_jobs = []
         failed_jobs = []
-        
+
         for job in jobs:
             if job.status in [JobStatus.QUEUED, JobStatus.RUNNING]:
                 try:
                     # Update job status in queue
                     await get_job_queue().update_job_status(job.task_id, JobStatus.CANCELLED)
-                    
+
                     # Update job in database
                     update_stmt = update(Job).where(Job.task_id == job.task_id).values(
                         status=JobStatus.CANCELLED,
@@ -289,7 +287,7 @@ async def cancel_bulk_jobs(
                     )
                     await db.execute(update_stmt)
                     cancelled_jobs.append(job.task_id)
-                    
+
                 except Exception as e:
                     failed_jobs.append({
                         'job_id': job.task_id,
@@ -300,9 +298,9 @@ async def cancel_bulk_jobs(
                     'job_id': job.task_id,
                     'error': f'Cannot cancel job with status: {job.status}'
                 })
-        
+
         await db.commit()
-        
+
         return {
             'message': f'Bulk cancel operation completed',
             'cancelled_jobs': cancelled_jobs,
@@ -311,22 +309,22 @@ async def cancel_bulk_jobs(
             'total_cancelled': len(cancelled_jobs),
             'total_failed': len(failed_jobs)
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         await db.rollback()
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail=f"Failed to cancel bulk jobs: {str(e)}"
         )
 
 
 @router.delete("/bulk")
 async def delete_bulk_jobs(
-    job_ids: List[str],
-    force: bool = Query(False, description="Force delete even if running"),
-    db: AsyncSession = Depends(get_async_db_dependency)
+        job_ids: List[str],
+        force: bool = Query(False, description="Force delete even if running"),
+        db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Delete multiple jobs in bulk
@@ -345,30 +343,30 @@ async def delete_bulk_jobs(
     try:
         if len(job_ids) > 100:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Maximum 100 jobs can be deleted at once"
             )
-        
+
         # Get jobs from database
         jobs_result = await db.execute(select(Job).where(Job.task_id.in_(job_ids)))
         jobs = jobs_result.scalars().all()
-        
+
         if not jobs:
             raise HTTPException(status_code=404, detail="No jobs found")
-        
+
         deleted_jobs = []
         failed_jobs = []
-        
+
         for job in jobs:
             if force or job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
                 try:
                     # Remove from queue if still there
                     await get_job_queue().remove_job(job.task_id)
-                    
+
                     # Delete from database
                     db.delete(job)
                     deleted_jobs.append(job.task_id)
-                    
+
                 except Exception as e:
                     failed_jobs.append({
                         'job_id': job.task_id,
@@ -379,9 +377,9 @@ async def delete_bulk_jobs(
                     'job_id': job.task_id,
                     'error': f'Cannot delete job with status: {job.status}. Use force=true to override.'
                 })
-        
+
         await db.commit()
-        
+
         return {
             'message': f'Bulk delete operation completed',
             'deleted_jobs': deleted_jobs,
@@ -390,21 +388,21 @@ async def delete_bulk_jobs(
             'total_deleted': len(deleted_jobs),
             'total_failed': len(failed_jobs)
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         await db.rollback()
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail=f"Failed to delete bulk jobs: {str(e)}"
         )
 
 
 @router.get("/stats")
 async def get_job_stats(
-    days: int = Query(7, ge=1, le=365, description="Number of days to include in stats"),
-    db: AsyncSession = Depends(get_async_db_dependency)
+        days: int = Query(7, ge=1, le=365, description="Number of days to include in stats"),
+        db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Get job statistics
@@ -422,7 +420,7 @@ async def get_job_stats(
         # Calculate date range
         end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=days)
-        
+
         # Get jobs in date range
         jobs_result = await db.execute(
             select(Job).where(
@@ -431,7 +429,7 @@ async def get_job_stats(
             )
         )
         jobs = jobs_result.scalars().all()
-        
+
         # Calculate statistics
         stats = {
             'total_jobs': len(jobs),
@@ -441,36 +439,37 @@ async def get_job_stats(
             'average_response_time': 0,
             'success_rate': 0
         }
-        
+
         # Status breakdown
         for status in JobStatus:
             stats['status_breakdown'][status.value] = len([j for j in jobs if j.status == status])
-        
+
         # Scraper type breakdown
         for scraper_type in ScraperType:
-            stats['scraper_type_breakdown'][scraper_type.value] = len([j for j in jobs if j.scraper_type == scraper_type])
-        
+            stats['scraper_type_breakdown'][scraper_type.value] = len(
+                [j for j in jobs if j.scraper_type == scraper_type])
+
         # Daily stats
         for i in range(days):
             date = start_date + timedelta(days=i)
             date_str = date.strftime('%Y-%m-%d')
             day_jobs = [j for j in jobs if j.created_at.date() == date.date()]
             stats['daily_stats'][date_str] = len(day_jobs)
-        
+
         # Calculate averages
         completed_jobs = [j for j in jobs if j.status == JobStatus.COMPLETED and j.result]
         if completed_jobs:
             response_times = [j.result.get('response_time', 0) for j in completed_jobs if j.result.get('response_time')]
             if response_times:
                 stats['average_response_time'] = sum(response_times) / len(response_times)
-            
+
             stats['success_rate'] = len(completed_jobs) / len(jobs) if jobs else 0
-        
+
         return stats
-        
+
     except Exception as e:
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail=f"Failed to get job statistics: {str(e)}"
         )
 
@@ -487,7 +486,7 @@ async def get_queue_status():
     """
     try:
         queue_size = await get_job_queue().get_queue_size()
-        
+
         executor = get_job_executor()
         if executor:
             running_jobs = executor.get_running_jobs()
@@ -495,7 +494,7 @@ async def get_queue_status():
         else:
             running_jobs = []
             max_concurrent = 10  # Default value
-        
+
         return {
             'queue_size': queue_size,
             'running_jobs': len(running_jobs),
@@ -503,10 +502,10 @@ async def get_queue_status():
             'running_job_ids': running_jobs,
             'queue_type': 'in-memory' if hasattr(get_job_queue(), 'queue') else 'redis'
         }
-        
+
     except Exception as e:
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail=f"Failed to get queue status: {str(e)}"
         )
 
@@ -524,9 +523,9 @@ async def clear_queue():
     try:
         await get_job_queue().clear_queue()
         return {'message': 'Queue cleared successfully'}
-        
+
     except Exception as e:
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail=f"Failed to clear queue: {str(e)}"
         )

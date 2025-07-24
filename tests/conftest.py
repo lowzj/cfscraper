@@ -2,27 +2,25 @@
 Shared pytest fixtures for the CFScraper test suite
 """
 import asyncio
-import pytest
-import pytest_asyncio
-from unittest.mock import Mock, AsyncMock, patch
-from typing import Dict, Any, Generator, AsyncGenerator
-from datetime import datetime, timezone
-import tempfile
 import os
 import uuid
+from datetime import datetime, timezone
+from typing import Generator
+from unittest.mock import Mock, AsyncMock, patch
 
+import fakeredis.aioredis
+import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
-import fakeredis.aioredis
 
-from app.main import app
 from app.core.database import get_db, Base
-from app.core.config import settings
+from app.main import app
 from app.models.job import Job, JobStatus, ScraperType
-from app.utils.queue import JobQueue, InMemoryJobQueue
 from app.utils.executor import JobExecutor
+from app.utils.queue import JobQueue, InMemoryJobQueue
 from app.utils.webhooks import WebhookDeliveryService
 
 
@@ -57,12 +55,13 @@ def test_db_session(test_db_engine) -> Generator[Session, None, None]:
 @pytest.fixture
 def test_db(test_db_session):
     """Override database dependency for tests"""
+
     def override_get_db():
         try:
             yield test_db_session
         finally:
             pass
-    
+
     app.dependency_overrides[get_db] = override_get_db
     yield test_db_session
     app.dependency_overrides.clear()
@@ -192,7 +191,7 @@ def mock_external_website():
         mock_response.text = "<html><body>Test content</body></html>"
         mock_response.headers = {"content-type": "text/html"}
         mock_response.elapsed.total_seconds.return_value = 1.5
-        
+
         mock_client.return_value.__aenter__.return_value.get = AsyncMock(
             return_value=mock_response
         )
@@ -219,7 +218,7 @@ def mock_selenium_driver():
 def setup_test_environment():
     """Setup test environment variables"""
     original_env = os.environ.copy()
-    
+
     # Set test environment variables
     os.environ.update({
         "TESTING": "true",
@@ -228,9 +227,9 @@ def setup_test_environment():
         "USE_IN_MEMORY_QUEUE": "true",
         "LOG_LEVEL": "WARNING"
     })
-    
+
     yield
-    
+
     # Restore original environment
     os.environ.clear()
     os.environ.update(original_env)

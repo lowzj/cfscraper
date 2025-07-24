@@ -1,11 +1,12 @@
-from typing import Dict, Any, Optional
-import time
 import asyncio
+import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, Any, Optional
 
 try:
     import cloudscraper
     from requests import Response
+
     HAS_CLOUDSCRAPER = True
 except ImportError:
     HAS_CLOUDSCRAPER = False
@@ -18,8 +19,9 @@ from app.utils.stealth_manager import get_stealth_manager, get_captcha_detector
 
 class CloudScraperScraper(BaseScraper):
     """CloudScraper-based scraper for bypassing Cloudflare protection"""
-    
-    def __init__(self, timeout: int = None, use_proxy_rotation: bool = True, use_user_agent_rotation: bool = True, use_stealth_mode: bool = True):
+
+    def __init__(self, timeout: int = None, use_proxy_rotation: bool = True, use_user_agent_rotation: bool = True,
+                 use_stealth_mode: bool = True):
         super().__init__(timeout or settings.cloudscraper_timeout)
         if not HAS_CLOUDSCRAPER:
             raise ImportError("cloudscraper is not installed. Install it with: pip install cloudscraper")
@@ -29,14 +31,14 @@ class CloudScraperScraper(BaseScraper):
         self.use_proxy_rotation = use_proxy_rotation
         self.use_user_agent_rotation = use_user_agent_rotation
         self.use_stealth_mode = use_stealth_mode
-    
+
     async def scrape(
-        self,
-        url: str,
-        method: str = "GET",
-        headers: Optional[Dict[str, str]] = None,
-        data: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, str]] = None
+            self,
+            url: str,
+            method: str = "GET",
+            headers: Optional[Dict[str, str]] = None,
+            data: Optional[Dict[str, Any]] = None,
+            params: Optional[Dict[str, str]] = None
     ) -> ScraperResult:
         """
         Scrape a URL using CloudScraper
@@ -128,15 +130,15 @@ class CloudScraperScraper(BaseScraper):
                 await proxy_pool.report_proxy_result(proxy_info, False)
 
             return self._handle_error(e, url)
-    
+
     def _make_request(
-        self,
-        url: str,
-        method: str,
-        headers: Optional[Dict[str, str]],
-        data: Optional[Dict[str, Any]],
-        params: Optional[Dict[str, str]],
-        proxy_info=None
+            self,
+            url: str,
+            method: str,
+            headers: Optional[Dict[str, str]],
+            data: Optional[Dict[str, Any]],
+            params: Optional[Dict[str, str]],
+            proxy_info=None
     ):
         """Make the actual HTTP request (blocking)"""
         if not HAS_CLOUDSCRAPER:
@@ -156,7 +158,7 @@ class CloudScraperScraper(BaseScraper):
             'headers': headers or {},
             'timeout': self.timeout
         }
-        
+
         if method.upper() == 'GET':
             request_kwargs['params'] = params
             return self.session.get(**request_kwargs)
@@ -170,7 +172,7 @@ class CloudScraperScraper(BaseScraper):
             request_kwargs['data'] = data
             request_kwargs['params'] = params
             return self.session.request(**request_kwargs)
-    
+
     async def close(self):
         """Clean up resources"""
         if hasattr(self, 'session'):

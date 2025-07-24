@@ -8,8 +8,8 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from sqlalchemy.orm import declarative_base
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import declarative_base
 
 from app.database.connection import connection_manager
 
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 # Create base class for models
 Base = declarative_base()
 
+
 # Backward compatibility - expose async engine from connection manager
 def async_engine():
     """Get the asynchronous database engine"""
@@ -25,11 +26,13 @@ def async_engine():
         connection_manager.initialize()
     return connection_manager.async_engine
 
+
 # Deprecated - for backward compatibility only
 def engine():
     """Get the asynchronous database engine (deprecated: use async_engine)"""
     logger.warning("engine() is deprecated, use async_engine() instead")
     return async_engine()
+
 
 # Deprecated - for backward compatibility only
 def SessionLocal():
@@ -40,13 +43,15 @@ def SessionLocal():
         "connection_manager.get_async_session() for direct session access."
     )
 
-# Deprecated - for backward compatibility only  
+
+# Deprecated - for backward compatibility only
 def get_db():
     """Deprecated: Use get_async_db_dependency() instead"""
     raise RuntimeError(
         "get_db() is deprecated and has been removed. "
         "Use get_async_db_dependency() for async database sessions."
     )
+
 
 @asynccontextmanager
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
@@ -69,6 +74,7 @@ async def init_db():
     async with connection_manager.async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+
 # Deprecated - for backward compatibility only
 def init_db_sync():
     """Deprecated: Use init_db() instead"""
@@ -76,6 +82,7 @@ def init_db_sync():
         "init_db_sync() is deprecated and has been removed. "
         "Use init_db() for async database initialization."
     )
+
 
 def get_connection_pool_stats() -> dict:
     """Get current connection pool statistics"""
@@ -91,7 +98,7 @@ async def close_db_connections():
 __all__ = [
     'Base',
     'get_async_db',
-    'get_async_db_dependency', 
+    'get_async_db_dependency',
     'init_db',
     'get_connection_pool_stats',
     'close_db_connections',
