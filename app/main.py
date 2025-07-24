@@ -65,7 +65,11 @@ app = FastAPI(
     title="CFScraper API",
     description="A comprehensive scraper API service with FastAPI, SeleniumBase, and Cloudscraper",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    # Conditionally disable docs in production
+    docs_url="/docs" if settings.enable_docs else None,
+    redoc_url="/redoc" if settings.enable_docs else None,
+    openapi_url="/openapi.json" if settings.enable_docs else None
 )
 
 # Setup CORS middleware with secure configuration

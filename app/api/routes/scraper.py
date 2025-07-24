@@ -66,7 +66,7 @@ async def create_scrape_job(
         request: SecureScrapeRequest,  # Use secure validation
         background_tasks: BackgroundTasks,
         db: AsyncSession = Depends(get_async_db_dependency),
-        api_key_info: APIKeyInfo = Depends(require_write_permission)
+        # api_key_info: APIKeyInfo = Depends(require_write_permission)
 ):
     """
     Create a new scraping job
