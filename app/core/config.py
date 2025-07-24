@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     # App settings
     app_name: str = Field(default="CFScraper API")
     debug: bool = Field(default=False)
+    enable_docs: bool = Field(
+        default=True,
+        description="Enable OpenAPI documentation endpoints (/docs, /redoc, /openapi.json)"
+    )
 
     # Database settings
     database_url: str = Field(
@@ -336,6 +340,20 @@ class Settings(BaseSettings):
 
         return v
 
+    @field_validator('enable_docs')
+    @classmethod
+    def validate_enable_docs(cls, v, info):
+        """Validate documentation settings"""
+        # Get debug value from the data being validated
+        debug = info.data.get('debug', False)
+
+        if not debug and v:
+            logger.warning(
+                "Documentation endpoints are enabled in production mode. "
+                "Consider setting ENABLE_DOCS=false for security."
+            )
+        return v
+
     @field_validator('allowed_origins')
     @classmethod
     def validate_cors_origins(cls, v):
@@ -386,6 +404,10 @@ def validate_security_configuration():
     # Check audit logging
     if not settings.audit_logging_enabled:
         issues.append("Audit logging is disabled")
+
+    # Check documentation endpoints in production
+    if not settings.debug and settings.enable_docs:
+        issues.append("Documentation endpoints are enabled in production")
 
     if issues:
         logger.warning(f"Security configuration issues detected: {', '.join(issues)}")

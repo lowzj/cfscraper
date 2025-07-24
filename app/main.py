@@ -41,11 +41,12 @@ async def lifespan(app: FastAPI):
     setup_metrics(app_version="1.0.0", app_name="CFScraper API")
     setup_health_checks()
 
-    init_db()  # Initialize database tables
+    await init_db()  # Initialize database tables
 
     # Setup APM instrumentation
-    from app.core.database import engine
-    setup_apm_instrumentation(app, engine)
+    from app.core.database import async_engine
+    engine = async_engine()
+    setup_apm_instrumentation(app, engine.sync_engine)
 
     await initialize_proxy_system()  # Initialize proxy rotation system
     await initialize_stealth_system()  # Initialize stealth features
@@ -64,7 +65,11 @@ app = FastAPI(
     title="CFScraper API",
     description="A comprehensive scraper API service with FastAPI, SeleniumBase, and Cloudscraper",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    # Conditionally disable docs in production
+    docs_url="/docs" if settings.enable_docs else None,
+    redoc_url="/redoc" if settings.enable_docs else None,
+    openapi_url="/openapi.json" if settings.enable_docs else None
 )
 
 # Setup CORS middleware with secure configuration

@@ -85,8 +85,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 hsts_value += "; preload"
             response.headers["Strict-Transport-Security"] = hsts_value
 
-        # Content Security Policy
-        response.headers["Content-Security-Policy"] = self.csp_policy
+        # Content Security Policy - use endpoint-specific policy
+        csp_policy = get_csp_policy_for_endpoint(str(request.url.path))
+        response.headers["Content-Security-Policy"] = csp_policy
 
         # X-Frame-Options (clickjacking protection)
         response.headers["X-Frame-Options"] = self.frame_options
@@ -185,10 +186,10 @@ def get_csp_policy_for_endpoint(endpoint: str) -> str:
     if endpoint.startswith("/docs") or endpoint.startswith("/redoc"):
         return (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: https:; "
-            "font-src 'self' data:; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+            "img-src 'self' data: https: https://fastapi.tiangolo.com; "
+            "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; "
             "connect-src 'self'; "
             "frame-ancestors 'none'"
         )
