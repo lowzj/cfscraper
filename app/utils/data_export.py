@@ -1,18 +1,18 @@
 import asyncio
 import csv
+import gzip
 import json
 import logging
-import gzip
+import os
+import tempfile
+import xml.etree.ElementTree as ET
 import zipfile
-from typing import Dict, List, Any, Optional, Union, AsyncGenerator, IO
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from io import StringIO, BytesIO
-import xml.etree.ElementTree as ET
+from typing import Dict, List, Any, Optional, AsyncGenerator, IO
 from xml.dom import minidom
-import tempfile
-import os
 
 logger = logging.getLogger(__name__)
 
@@ -41,26 +41,26 @@ class ExportConfig:
     pretty_print: bool = True
     chunk_size: int = 1000
     max_file_size_mb: int = 100
-    
+
     # CSV specific options
     csv_delimiter: str = ","
     csv_quote_char: str = '"'
     csv_include_headers: bool = True
-    
+
     # XML specific options
     xml_root_element: str = "data"
     xml_item_element: str = "item"
-    
+
     # JSON specific options
     json_indent: int = 2
 
 
 class DataTransformer:
     """Handles data transformation and cleaning"""
-    
+
     def __init__(self):
         self._lock = asyncio.Lock()
-    
+
     async def clean_data(self, data: Any) -> Any:
         """Clean and normalize data"""
         if isinstance(data, dict):
@@ -71,7 +71,7 @@ class DataTransformer:
             return self._clean_string(data)
         else:
             return data
-    
+
     async def _clean_dict(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Clean dictionary data"""
         cleaned = {}
@@ -81,31 +81,31 @@ class DataTransformer:
             # Clean value
             cleaned[clean_key] = await self.clean_data(value)
         return cleaned
-    
+
     async def _clean_list(self, data: List[Any]) -> List[Any]:
         """Clean list data"""
         return [await self.clean_data(item) for item in data]
-    
+
     def _clean_string(self, data: str) -> str:
         """Clean string data"""
         if not isinstance(data, str):
             return str(data)
-        
+
         # Remove null bytes and control characters
         cleaned = data.replace('\x00', '').replace('\r', '').strip()
-        
+
         # Normalize whitespace
         cleaned = ' '.join(cleaned.split())
-        
+
         return cleaned
-    
+
     async def flatten_data(self, data: Dict[str, Any], prefix: str = "", separator: str = ".") -> Dict[str, Any]:
         """Flatten nested dictionary"""
         flattened = {}
-        
+
         for key, value in data.items():
             new_key = f"{prefix}{separator}{key}" if prefix else key
-            
+
             if isinstance(value, dict):
                 nested = await self.flatten_data(value, new_key, separator)
                 flattened.update(nested)
@@ -119,17 +119,17 @@ class DataTransformer:
                         flattened[f"{new_key}[{i}]"] = item
             else:
                 flattened[new_key] = value
-        
+
         return flattened
 
 
 class JSONExporter:
     """Handles JSON export functionality"""
-    
+
     def __init__(self, config: ExportConfig):
         self.config = config
         self.transformer = DataTransformer()
-    
+
     async def export_data(self, data: List[Dict[str, Any]], output_file: IO) -> int:
         """Export data to JSON format"""
         try:
@@ -138,7 +138,7 @@ class JSONExporter:
             for item in data:
                 cleaned_item = await self.transformer.clean_data(item)
                 cleaned_data.append(cleaned_item)
-            
+
             # Add metadata if requested
             export_data = {
                 "data": cleaned_data,
@@ -148,10 +148,10 @@ class JSONExporter:
                     "format": "json"
                 } if self.config.include_metadata else None
             }
-            
+
             if not self.config.include_metadata:
                 export_data = cleaned_data
-            
+
             # Write JSON
             json_str = json.dumps(
                 export_data,
@@ -159,46 +159,46 @@ class JSONExporter:
                 ensure_ascii=False,
                 default=str
             )
-            
+
             output_file.write(json_str)
             return len(json_str)
-            
+
         except Exception as e:
             logger.error(f"JSON export failed: {str(e)}")
             raise
-    
+
     async def export_streaming(self, data_generator: AsyncGenerator[Dict[str, Any], None], output_file: IO) -> int:
         """Export data using streaming for large datasets"""
         total_bytes = 0
-        
+
         try:
             # Start JSON array
             output_file.write('[\n')
             total_bytes += 2
-            
+
             first_item = True
             async for item in data_generator:
                 if not first_item:
                     output_file.write(',\n')
                     total_bytes += 2
-                
+
                 cleaned_item = await self.transformer.clean_data(item)
                 json_str = json.dumps(cleaned_item, ensure_ascii=False, default=str)
-                
+
                 if self.config.pretty_print:
                     json_str = '  ' + json_str
                     total_bytes += 2
-                
+
                 output_file.write(json_str)
                 total_bytes += len(json_str)
                 first_item = False
-            
+
             # Close JSON array
             output_file.write('\n]')
             total_bytes += 2
-            
+
             return total_bytes
-            
+
         except Exception as e:
             logger.error(f"Streaming JSON export failed: {str(e)}")
             raise
@@ -206,16 +206,16 @@ class JSONExporter:
 
 class CSVExporter:
     """Handles CSV export functionality"""
-    
+
     def __init__(self, config: ExportConfig):
         self.config = config
         self.transformer = DataTransformer()
-    
+
     async def export_data(self, data: List[Dict[str, Any]], output_file: IO) -> int:
         """Export data to CSV format"""
         if not data:
             return 0
-        
+
         try:
             # Clean and flatten data
             cleaned_data = []
@@ -223,14 +223,14 @@ class CSVExporter:
                 cleaned_item = await self.transformer.clean_data(item)
                 flattened_item = await self.transformer.flatten_data(cleaned_item)
                 cleaned_data.append(flattened_item)
-            
+
             # Get all unique keys for headers
             all_keys = set()
             for item in cleaned_data:
                 all_keys.update(item.keys())
-            
+
             headers = sorted(list(all_keys))
-            
+
             # Create CSV writer
             writer = csv.DictWriter(
                 output_file,
@@ -239,16 +239,16 @@ class CSVExporter:
                 quotechar=self.config.csv_quote_char,
                 quoting=csv.QUOTE_MINIMAL
             )
-            
+
             total_bytes = 0
-            
+
             # Write headers
             if self.config.csv_include_headers:
                 writer.writeheader()
                 # Estimate header size
                 header_line = self.config.csv_delimiter.join(headers) + '\n'
                 total_bytes += len(header_line)
-            
+
             # Write data rows
             for item in cleaned_data:
                 # Ensure all keys are present
@@ -257,19 +257,19 @@ class CSVExporter:
                 # Estimate row size
                 row_line = self.config.csv_delimiter.join(str(v) for v in row.values()) + '\n'
                 total_bytes += len(row_line)
-            
+
             return total_bytes
-            
+
         except Exception as e:
             logger.error(f"CSV export failed: {str(e)}")
             raise
-    
+
     async def export_streaming(self, data_generator: AsyncGenerator[Dict[str, Any], None], output_file: IO) -> int:
         """Export data using streaming for large datasets, handling dynamic headers."""
         total_bytes = 0
         all_headers = set()
         temp_filename = None
-        
+
         try:
             # Use a temporary file to buffer rows
             with tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8', newline='') as temp_f:
@@ -282,7 +282,7 @@ class CSVExporter:
 
                     # Update headers
                     all_headers.update(flattened_item.keys())
-                    
+
                     # Write row as JSON to temp file for later processing
                     temp_f.write(json.dumps(flattened_item) + '\n')
 
@@ -290,10 +290,10 @@ class CSVExporter:
                 if not all_headers:
                     return 0
 
-                temp_f.seek(0) # Rewind temp file
+                temp_f.seek(0)  # Rewind temp file
 
                 headers = sorted(list(all_headers))
-                
+
                 writer = csv.DictWriter(
                     output_file,
                     fieldnames=headers,
@@ -456,10 +456,10 @@ class DataExportManager:
         }
 
     async def export_data(
-        self,
-        data: List[Dict[str, Any]],
-        output_path: Optional[str] = None,
-        format_type: Optional[ExportFormat] = None
+            self,
+            data: List[Dict[str, Any]],
+            output_path: Optional[str] = None,
+            format_type: Optional[ExportFormat] = None
     ) -> str:
         """
         Export data to specified format
@@ -513,10 +513,10 @@ class DataExportManager:
             raise
 
     async def export_streaming(
-        self,
-        data_generator: AsyncGenerator[Dict[str, Any], None],
-        output_path: str,
-        format_type: Optional[ExportFormat] = None
+            self,
+            data_generator: AsyncGenerator[Dict[str, Any], None],
+            output_path: str,
+            format_type: Optional[ExportFormat] = None
     ) -> str:
         """Export large datasets using streaming"""
         export_format = format_type or self.config.format
@@ -572,11 +572,11 @@ class ExportScheduler:
         self._scheduler_task: Optional[asyncio.Task] = None
 
     async def schedule_export(
-        self,
-        export_id: str,
-        export_config: ExportConfig,
-        schedule_time: datetime,
-        query_params: Dict[str, Any]
+            self,
+            export_id: str,
+            export_config: ExportConfig,
+            schedule_time: datetime,
+            query_params: Dict[str, Any]
     ) -> str:
         """Schedule an export for future execution"""
         async with self._lock:
@@ -632,7 +632,7 @@ class ExportScheduler:
         async with self._lock:
             for export_id, export_info in self._scheduled_exports.items():
                 if (export_info["status"] == "scheduled" and
-                    export_info["schedule_time"] <= now):
+                        export_info["schedule_time"] <= now):
                     due_exports.append((export_id, export_info))
 
         for export_id, export_info in due_exports:

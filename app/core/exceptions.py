@@ -6,13 +6,13 @@ from typing import Optional, Dict, Any
 
 class CFScraperException(Exception):
     """Base exception for CFScraper API"""
-    
+
     def __init__(
-        self, 
-        message: str, 
-        status_code: int = 500,
-        error_code: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None
+            self,
+            message: str,
+            status_code: int = 500,
+            error_code: Optional[str] = None,
+            details: Optional[Dict[str, Any]] = None
     ):
         self.message = message
         self.status_code = status_code
@@ -23,7 +23,7 @@ class CFScraperException(Exception):
 
 class ValidationError(CFScraperException):
     """Raised when input validation fails"""
-    
+
     def __init__(self, message: str, field: Optional[str] = None, value: Optional[Any] = None):
         details = {}
         if field:
@@ -40,7 +40,7 @@ class ValidationError(CFScraperException):
 
 class JobNotFoundError(CFScraperException):
     """Raised when a job is not found"""
-    
+
     def __init__(self, job_id: str):
         super().__init__(
             message=f"Job with ID '{job_id}' not found",
@@ -52,7 +52,7 @@ class JobNotFoundError(CFScraperException):
 
 class JobStateError(CFScraperException):
     """Raised when a job operation is invalid for the current state"""
-    
+
     def __init__(self, job_id: str, current_state: str, operation: str):
         super().__init__(
             message=f"Cannot {operation} job '{job_id}' in state '{current_state}'",
@@ -68,7 +68,7 @@ class JobStateError(CFScraperException):
 
 class ScraperError(CFScraperException):
     """Raised when scraper encounters an error"""
-    
+
     def __init__(self, message: str, scraper_type: str, url: Optional[str] = None):
         super().__init__(
             message=message,
@@ -83,7 +83,7 @@ class ScraperError(CFScraperException):
 
 class ConfigurationError(CFScraperException):
     """Raised when there's a configuration error"""
-    
+
     def __init__(self, message: str, component: Optional[str] = None):
         super().__init__(
             message=message,
@@ -95,7 +95,7 @@ class ConfigurationError(CFScraperException):
 
 class DatabaseError(CFScraperException):
     """Raised when database operations fail"""
-    
+
     def __init__(self, message: str, operation: Optional[str] = None):
         super().__init__(
             message=message,
@@ -107,7 +107,7 @@ class DatabaseError(CFScraperException):
 
 class QueueError(CFScraperException):
     """Raised when queue operations fail"""
-    
+
     def __init__(self, message: str, operation: Optional[str] = None):
         super().__init__(
             message=message,
@@ -119,7 +119,7 @@ class QueueError(CFScraperException):
 
 class RateLimitError(CFScraperException):
     """Raised when rate limits are exceeded"""
-    
+
     def __init__(self, message: str, retry_after: Optional[int] = None):
         super().__init__(
             message=message,
@@ -131,7 +131,7 @@ class RateLimitError(CFScraperException):
 
 class AuthenticationError(CFScraperException):
     """Raised when authentication fails"""
-    
+
     def __init__(self, message: str = "Authentication failed"):
         super().__init__(
             message=message,
@@ -142,7 +142,7 @@ class AuthenticationError(CFScraperException):
 
 class AuthorizationError(CFScraperException):
     """Raised when authorization fails"""
-    
+
     def __init__(self, message: str = "Access denied"):
         super().__init__(
             message=message,
@@ -153,7 +153,7 @@ class AuthorizationError(CFScraperException):
 
 class ResourceNotFoundError(CFScraperException):
     """Raised when a resource is not found"""
-    
+
     def __init__(self, resource_type: str, identifier: str):
         super().__init__(
             message=f"{resource_type} '{identifier}' not found",
@@ -168,7 +168,7 @@ class ResourceNotFoundError(CFScraperException):
 
 class ServiceUnavailableError(CFScraperException):
     """Raised when a service is unavailable"""
-    
+
     def __init__(self, service: str, message: Optional[str] = None):
         super().__init__(
             message=message or f"Service '{service}' is currently unavailable",
@@ -180,7 +180,7 @@ class ServiceUnavailableError(CFScraperException):
 
 class TimeoutError(CFScraperException):
     """Raised when operations timeout"""
-    
+
     def __init__(self, operation: str, timeout: int):
         super().__init__(
             message=f"Operation '{operation}' timed out after {timeout} seconds",
@@ -195,7 +195,7 @@ class TimeoutError(CFScraperException):
 
 class NetworkError(CFScraperException):
     """Raised when network operations fail"""
-    
+
     def __init__(self, message: str, url: Optional[str] = None, status_code: Optional[int] = None):
         super().__init__(
             message=message,
@@ -210,7 +210,7 @@ class NetworkError(CFScraperException):
 
 class CloudflareError(CFScraperException):
     """Raised when Cloudflare bypass fails"""
-    
+
     def __init__(self, message: str, url: Optional[str] = None):
         super().__init__(
             message=message,
@@ -222,7 +222,7 @@ class CloudflareError(CFScraperException):
 
 class BrowserError(CFScraperException):
     """Raised when browser operations fail"""
-    
+
     def __init__(self, message: str, browser_type: Optional[str] = None):
         super().__init__(
             message=message,
@@ -234,7 +234,7 @@ class BrowserError(CFScraperException):
 
 class ContentExtractionError(CFScraperException):
     """Raised when content extraction fails"""
-    
+
     def __init__(self, message: str, content_type: Optional[str] = None):
         super().__init__(
             message=message,

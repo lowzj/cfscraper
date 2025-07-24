@@ -6,9 +6,9 @@ on application restarts. Ensures the same salt is used consistently across
 application lifecycle.
 """
 
+import logging
 import os
 import secrets
-import logging
 from pathlib import Path
 from typing import Optional
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class SaltManager:
     """Manages persistent storage of encryption salts"""
-    
+
     def __init__(self, salt_file_path: Optional[str] = None):
         """
         Initialize salt manager
@@ -31,10 +31,10 @@ class SaltManager:
             # Default to .salt file in the application root
             app_root = Path(__file__).parent.parent.parent
             self.salt_file = app_root / ".salt"
-        
+
         # Ensure the directory exists
         self.salt_file.parent.mkdir(parents=True, exist_ok=True)
-    
+
     def get_or_create_salt(self) -> str:
         """
         Get existing salt from storage or create a new one if none exists
@@ -48,21 +48,21 @@ class SaltManager:
             if existing_salt:
                 logger.info("Loaded existing encryption salt from persistent storage")
                 return existing_salt
-            
+
             # Generate new salt if none exists
             new_salt = self.generate_salt()
             self.save_salt(new_salt)
             logger.info(f"Generated new encryption salt and saved to {self.salt_file}")
             logger.warning("IMPORTANT: Backup the salt file to prevent data loss!")
-            
+
             return new_salt
-            
+
         except Exception as e:
             logger.error(f"Failed to manage salt persistence: {e}")
             # Fallback to generating a temporary salt (not recommended for production)
             logger.warning("Using temporary salt - data may not persist across restarts!")
             return self.generate_salt()
-    
+
     def load_salt(self) -> Optional[str]:
         """
         Load salt from persistent storage
@@ -73,21 +73,21 @@ class SaltManager:
         try:
             if not self.salt_file.exists():
                 return None
-            
+
             with open(self.salt_file, 'r', encoding='utf-8') as f:
                 salt = f.read().strip()
-            
+
             # Validate the loaded salt
             if self.validate_salt(salt):
                 return salt
             else:
                 logger.warning(f"Invalid salt found in {self.salt_file}, will regenerate")
                 return None
-                
+
         except Exception as e:
             logger.error(f"Failed to load salt from {self.salt_file}: {e}")
             return None
-    
+
     def save_salt(self, salt: str) -> bool:
         """
         Save salt to persistent storage
@@ -103,21 +103,21 @@ class SaltManager:
             if not self.validate_salt(salt):
                 logger.error("Cannot save invalid salt")
                 return False
-            
+
             # Write salt to file with restricted permissions
             with open(self.salt_file, 'w', encoding='utf-8') as f:
                 f.write(salt)
-            
+
             # Set restrictive file permissions (owner read/write only)
             os.chmod(self.salt_file, 0o600)
-            
+
             logger.info(f"Salt saved to {self.salt_file}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to save salt to {self.salt_file}: {e}")
             return False
-    
+
     def generate_salt(self) -> str:
         """
         Generate a new 64-character hexadecimal salt
@@ -126,7 +126,7 @@ class SaltManager:
             64-character hex salt string
         """
         return secrets.token_hex(32)  # 32 bytes = 64 hex characters
-    
+
     def validate_salt(self, salt: str) -> bool:
         """
         Validate that a salt is properly formatted
@@ -139,18 +139,18 @@ class SaltManager:
         """
         if not salt or not isinstance(salt, str):
             return False
-        
+
         # Check length (should be 64 characters for 32-byte salt)
         if len(salt) != 64:
             return False
-        
+
         # Check if it's valid hexadecimal
         try:
             bytes.fromhex(salt)
             return True
         except ValueError:
             return False
-    
+
     def backup_salt(self, backup_path: str) -> bool:
         """
         Create a backup of the current salt
@@ -165,27 +165,27 @@ class SaltManager:
             if not self.salt_file.exists():
                 logger.warning("No salt file exists to backup")
                 return False
-            
+
             backup_file = Path(backup_path)
             backup_file.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Copy salt file to backup location
             with open(self.salt_file, 'r', encoding='utf-8') as src:
                 salt = src.read()
-            
+
             with open(backup_file, 'w', encoding='utf-8') as dst:
                 dst.write(salt)
-            
+
             # Set restrictive permissions on backup
             os.chmod(backup_file, 0o600)
-            
+
             logger.info(f"Salt backed up to {backup_file}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to backup salt: {e}")
             return False
-    
+
     def restore_salt(self, backup_path: str) -> bool:
         """
         Restore salt from a backup
@@ -201,16 +201,16 @@ class SaltManager:
             if not backup_file.exists():
                 logger.error(f"Backup file not found: {backup_file}")
                 return False
-            
+
             with open(backup_file, 'r', encoding='utf-8') as f:
                 salt = f.read().strip()
-            
+
             if not self.validate_salt(salt):
                 logger.error("Backup contains invalid salt")
                 return False
-            
+
             return self.save_salt(salt)
-            
+
         except Exception as e:
             logger.error(f"Failed to restore salt from backup: {e}")
             return False

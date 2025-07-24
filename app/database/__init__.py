@@ -12,6 +12,6 @@ from .connection import connection_manager, ConnectionPoolConfig, DatabaseConnec
 
 __all__ = [
     'connection_manager',
-    'ConnectionPoolConfig', 
+    'ConnectionPoolConfig',
     'DatabaseConnectionManager',
 ]

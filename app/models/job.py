@@ -1,10 +1,8 @@
-from datetime import datetime
 from enum import Enum
-from typing import Optional, Dict, Any
 
-from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, Boolean, Index, ForeignKey
-from sqlalchemy.sql import func
+from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, Index, ForeignKey
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from app.core.database import Base
 

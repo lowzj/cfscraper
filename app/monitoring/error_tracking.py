@@ -2,27 +2,27 @@
 Error tracking and notification system using Sentry
 """
 
-import os
 import logging
-from typing import Dict, Any, Optional, List
+import os
 from functools import wraps
+from typing import Dict, Any, Optional, List
 
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
-from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
-from sentry_sdk.integrations.redis import RedisIntegration
 from sentry_sdk.integrations.httpx import HttpxIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.integrations.redis import RedisIntegration
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
 
 def setup_sentry(
-    dsn: Optional[str] = None,
-    environment: str = "development",
-    release: Optional[str] = None,
-    sample_rate: float = 1.0,
-    traces_sample_rate: float = 0.1,
-    profiles_sample_rate: float = 0.1,
-    enable_tracing: bool = True
+        dsn: Optional[str] = None,
+        environment: str = "development",
+        release: Optional[str] = None,
+        sample_rate: float = 1.0,
+        traces_sample_rate: float = 0.1,
+        profiles_sample_rate: float = 0.1,
+        enable_tracing: bool = True
 ):
     """
     Setup Sentry error tracking
@@ -38,11 +38,11 @@ def setup_sentry(
     """
     if not dsn:
         dsn = os.getenv("SENTRY_DSN")
-    
+
     if not dsn:
         logging.warning("Sentry DSN not provided, error tracking disabled")
         return
-    
+
     # Setup integrations
     integrations = [
         FastApiIntegration(auto_enabling_integrations=False),
@@ -50,11 +50,11 @@ def setup_sentry(
         RedisIntegration(),
         HttpxIntegration(),
         LoggingIntegration(
-            level=logging.INFO,        # Capture info and above as breadcrumbs
+            level=logging.INFO,  # Capture info and above as breadcrumbs
             event_level=logging.ERROR  # Send errors as events
         ),
     ]
-    
+
     # Initialize Sentry
     sentry_sdk.init(
         dsn=dsn,
@@ -85,11 +85,11 @@ def before_send_filter(event, hint):
     # Don't send health check errors
     if event.get("request", {}).get("url", "").endswith(("/health", "/ping", "/metrics")):
         return None
-    
+
     # Don't send rate limit errors
     if "rate limit" in str(event.get("exception", {}).get("values", [{}])[0].get("value", "")).lower():
         return None
-    
+
     return event
 
 
@@ -108,16 +108,16 @@ def before_send_transaction_filter(event, hint):
     transaction_name = event.get("transaction", "")
     if any(path in transaction_name for path in ["/health", "/ping", "/metrics"]):
         return None
-    
+
     return event
 
 
 def capture_exception(
-    error: Exception,
-    context: Optional[Dict[str, Any]] = None,
-    tags: Optional[Dict[str, str]] = None,
-    level: str = "error",
-    fingerprint: Optional[List[str]] = None
+        error: Exception,
+        context: Optional[Dict[str, Any]] = None,
+        tags: Optional[Dict[str, str]] = None,
+        level: str = "error",
+        fingerprint: Optional[List[str]] = None
 ):
     """
     Capture an exception with additional context
@@ -132,30 +132,30 @@ def capture_exception(
     with sentry_sdk.push_scope() as scope:
         # Set level
         scope.level = level
-        
+
         # Add context
         if context:
             for key, value in context.items():
                 scope.set_context(key, value)
-        
+
         # Add tags
         if tags:
             for key, value in tags.items():
                 scope.set_tag(key, value)
-        
+
         # Set fingerprint for custom grouping
         if fingerprint:
             scope.fingerprint = fingerprint
-        
+
         # Capture the exception
         sentry_sdk.capture_exception(error)
 
 
 def capture_message(
-    message: str,
-    level: str = "info",
-    context: Optional[Dict[str, Any]] = None,
-    tags: Optional[Dict[str, str]] = None
+        message: str,
+        level: str = "info",
+        context: Optional[Dict[str, Any]] = None,
+        tags: Optional[Dict[str, str]] = None
 ):
     """
     Capture a message with additional context
@@ -169,17 +169,17 @@ def capture_message(
     with sentry_sdk.push_scope() as scope:
         # Set level
         scope.level = level
-        
+
         # Add context
         if context:
             for key, value in context.items():
                 scope.set_context(key, value)
-        
+
         # Add tags
         if tags:
             for key, value in tags.items():
                 scope.set_tag(key, value)
-        
+
         # Capture the message
         sentry_sdk.capture_message(message)
 
@@ -201,11 +201,11 @@ def set_user_context(user_id: str, email: Optional[str] = None, username: Option
 
 
 def set_request_context(
-    request_id: str,
-    method: str,
-    url: str,
-    user_agent: Optional[str] = None,
-    ip_address: Optional[str] = None
+        request_id: str,
+        method: str,
+        url: str,
+        user_agent: Optional[str] = None,
+        ip_address: Optional[str] = None
 ):
     """
     Set request context for error tracking
@@ -243,10 +243,10 @@ def set_job_context(job_id: str, job_type: str, status: Optional[str] = None):
 
 
 def add_breadcrumb(
-    message: str,
-    category: str = "custom",
-    level: str = "info",
-    data: Optional[Dict[str, Any]] = None
+        message: str,
+        category: str = "custom",
+        level: str = "info",
+        data: Optional[Dict[str, Any]] = None
 ):
     """
     Add a breadcrumb for debugging context
@@ -273,17 +273,18 @@ def sentry_trace(operation_name: str = None, tags: Optional[Dict[str, str]] = No
         operation_name: Name of the operation (defaults to function name)
         tags: Tags to add to the transaction
     """
+
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             op_name = operation_name or f"{func.__module__}.{func.__name__}"
-            
+
             with sentry_sdk.start_transaction(op=op_name, name=op_name) as transaction:
                 # Add tags
                 if tags:
                     for key, value in tags.items():
                         transaction.set_tag(key, value)
-                
+
                 try:
                     result = func(*args, **kwargs)
                     transaction.set_tag("success", True)
@@ -293,8 +294,9 @@ def sentry_trace(operation_name: str = None, tags: Optional[Dict[str, str]] = No
                     transaction.set_tag("error.type", type(e).__name__)
                     capture_exception(e, context={"function": op_name})
                     raise
-        
+
         return wrapper
+
     return decorator
 
 
@@ -306,17 +308,18 @@ def sentry_trace_async(operation_name: str = None, tags: Optional[Dict[str, str]
         operation_name: Name of the operation (defaults to function name)
         tags: Tags to add to the transaction
     """
+
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
             op_name = operation_name or f"{func.__module__}.{func.__name__}"
-            
+
             with sentry_sdk.start_transaction(op=op_name, name=op_name) as transaction:
                 # Add tags
                 if tags:
                     for key, value in tags.items():
                         transaction.set_tag(key, value)
-                
+
                 try:
                     result = await func(*args, **kwargs)
                     transaction.set_tag("success", True)
@@ -326,14 +329,15 @@ def sentry_trace_async(operation_name: str = None, tags: Optional[Dict[str, str]
                     transaction.set_tag("error.type", type(e).__name__)
                     capture_exception(e, context={"function": op_name})
                     raise
-        
+
         return wrapper
+
     return decorator
 
 
 class ErrorTracker:
     """High-level error tracking interface"""
-    
+
     @staticmethod
     def setup_from_env():
         """Setup error tracking from environment variables"""
@@ -342,7 +346,7 @@ class ErrorTracker:
         release = os.getenv("SENTRY_RELEASE", "1.0.0")
         sample_rate = float(os.getenv("SENTRY_SAMPLE_RATE", "1.0"))
         traces_sample_rate = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1"))
-        
+
         if dsn:
             setup_sentry(
                 dsn=dsn,
@@ -351,7 +355,7 @@ class ErrorTracker:
                 sample_rate=sample_rate,
                 traces_sample_rate=traces_sample_rate
             )
-    
+
     @staticmethod
     def capture_job_error(job_id: str, job_type: str, error: Exception, context: Dict[str, Any] = None):
         """Capture job-related error"""
@@ -362,7 +366,7 @@ class ErrorTracker:
             tags={"component": "job_processor", "job_type": job_type},
             fingerprint=[f"job-error-{job_type}", str(type(error).__name__)]
         )
-    
+
     @staticmethod
     def capture_scraper_error(scraper_type: str, url: str, error: Exception, context: Dict[str, Any] = None):
         """Capture scraper-related error"""
@@ -372,7 +376,7 @@ class ErrorTracker:
             tags={"component": "scraper", "scraper_type": scraper_type},
             fingerprint=[f"scraper-error-{scraper_type}", str(type(error).__name__)]
         )
-    
+
     @staticmethod
     def capture_webhook_error(webhook_url: str, error: Exception, context: Dict[str, Any] = None):
         """Capture webhook-related error"""

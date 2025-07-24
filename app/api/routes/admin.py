@@ -5,20 +5,19 @@ Provides administrative endpoints for managing API keys, security settings,
 and monitoring security events.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
-from typing import List, Optional
 from datetime import datetime, timezone
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.core.database import get_db
+from app.security.audit import get_audit_logger, AuditEvent, AuditEventType, AuditSeverity
 from app.security.authentication import (
-    require_admin_key, 
-    get_api_key_manager, 
+    require_admin_key,
+    get_api_key_manager,
     APIKeyPermission,
     APIKeyInfo
 )
-from app.security.audit import get_audit_logger, AuditEvent, AuditEventType, AuditSeverity
 
 router = APIRouter()
 
@@ -53,9 +52,9 @@ class APIKeyListResponse(BaseModel):
 
 @router.post("/api-keys", response_model=APIKeyResponse)
 async def create_api_key(
-    req: Request,
-    request: APIKeyCreateRequest,
-    admin_key: APIKeyInfo = Depends(require_admin_key)
+        req: Request,
+        request: APIKeyCreateRequest,
+        admin_key: APIKeyInfo = Depends(require_admin_key)
 ):
     """
     Create a new API key (Admin only)
@@ -67,18 +66,18 @@ async def create_api_key(
         # Validate permissions
         valid_permissions = {"read", "write", "admin"}
         requested_permissions = set(request.permissions)
-        
+
         if not requested_permissions.issubset(valid_permissions):
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid permissions. Valid options: {valid_permissions}"
             )
-        
+
         # Convert to enum
         permission_enums = {
             APIKeyPermission(perm) for perm in requested_permissions
         }
-        
+
         # Generate API key
         manager = get_api_key_manager()
         api_key = manager.generate_api_key(
@@ -86,10 +85,10 @@ async def create_api_key(
             expires_in_days=request.expires_in_days,
             description=request.description
         )
-        
+
         # Get key info for response
         key_info = manager.validate_api_key(api_key)
-        
+
         # Log admin action
         audit_logger = get_audit_logger()
         audit_event = AuditEvent(
@@ -115,7 +114,7 @@ async def create_api_key(
             api_key_id=admin_key.key_id
         )
         audit_logger.log_event(audit_event)
-        
+
         return APIKeyResponse(
             api_key=api_key,
             key_id=key_info.key_id,
@@ -123,14 +122,14 @@ async def create_api_key(
             expires_at=key_info.expires_at,
             description=key_info.description
         )
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create API key: {str(e)}")
 
 
 @router.get("/api-keys", response_model=List[APIKeyListResponse])
 async def list_api_keys(
-    admin_key: APIKeyInfo = Depends(require_admin_key)
+        admin_key: APIKeyInfo = Depends(require_admin_key)
 ):
     """
     List all API keys (Admin only)
@@ -140,7 +139,7 @@ async def list_api_keys(
     try:
         manager = get_api_key_manager()
         keys_data = manager.list_api_keys()
-        
+
         return [
             APIKeyListResponse(
                 key_id=key_data["key_id"],
@@ -154,16 +153,16 @@ async def list_api_keys(
             )
             for key_data in keys_data
         ]
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list API keys: {str(e)}")
 
 
 @router.delete("/api-keys/{key_id}")
 async def revoke_api_key(
-    req: Request,
-    key_id: str,
-    admin_key: APIKeyInfo = Depends(require_admin_key)
+        req: Request,
+        key_id: str,
+        admin_key: APIKeyInfo = Depends(require_admin_key)
 ):
     """
     Revoke an API key (Admin only)
@@ -172,22 +171,22 @@ async def revoke_api_key(
     """
     try:
         manager = get_api_key_manager()
-        
+
         # Find the key to revoke
         keys_data = manager.list_api_keys()
         target_key = None
-        
+
         for key_data in keys_data:
             if key_data["key_id"] == key_id:
                 target_key = key_data
                 break
-        
+
         if not target_key:
             raise HTTPException(status_code=404, detail="API key not found")
-        
+
         # Note: We can't revoke by key_id directly, need to implement this in the manager
         # For now, we'll mark it as inactive in the response
-        
+
         # Log admin action
         audit_logger = get_audit_logger()
         audit_event = AuditEvent(
@@ -211,9 +210,9 @@ async def revoke_api_key(
             api_key_id=admin_key.key_id
         )
         audit_logger.log_event(audit_event)
-        
+
         return {"message": f"API key {key_id} has been revoked"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -222,7 +221,7 @@ async def revoke_api_key(
 
 @router.post("/api-keys/cleanup")
 async def cleanup_expired_keys(
-    admin_key: APIKeyInfo = Depends(require_admin_key)
+        admin_key: APIKeyInfo = Depends(require_admin_key)
 ):
     """
     Clean up expired API keys (Admin only)
@@ -232,19 +231,19 @@ async def cleanup_expired_keys(
     try:
         manager = get_api_key_manager()
         removed_count = manager.cleanup_expired_keys()
-        
+
         return {
             "message": f"Cleaned up {removed_count} expired API keys",
             "removed_count": removed_count
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to cleanup keys: {str(e)}")
 
 
 @router.get("/security/status")
 async def get_security_status(
-    admin_key: APIKeyInfo = Depends(require_admin_key)
+        admin_key: APIKeyInfo = Depends(require_admin_key)
 ):
     """
     Get security system status (Admin only)
@@ -254,7 +253,7 @@ async def get_security_status(
     """
     try:
         from app.core.config import settings
-        
+
         status = {
             "authentication": {
                 "enabled": True,
@@ -276,18 +275,18 @@ async def get_security_status(
                 "allowed_origins": settings.allowed_origins
             }
         }
-        
+
         return status
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get security status: {str(e)}")
 
 
 @router.get("/audit/events")
 async def get_audit_events(
-    admin_key: APIKeyInfo = Depends(require_admin_key),
-    limit: int = 100,
-    event_type: Optional[str] = None
+        admin_key: APIKeyInfo = Depends(require_admin_key),
+        limit: int = 100,
+        event_type: Optional[str] = None
 ):
     """
     Get recent audit events (Admin only)
@@ -298,7 +297,7 @@ async def get_audit_events(
     try:
         # This is a placeholder implementation
         # In production, you'd query from a database or log aggregation system
-        
+
         return {
             "message": "Audit events endpoint - implement with proper log storage",
             "note": "This would return recent audit events from persistent storage",
@@ -307,14 +306,14 @@ async def get_audit_events(
                 "event_type": event_type
             }
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get audit events: {str(e)}")
 
 
 @router.post("/security/test")
 async def test_security_features(
-    admin_key: APIKeyInfo = Depends(require_admin_key)
+        admin_key: APIKeyInfo = Depends(require_admin_key)
 ):
     """
     Test security features (Admin only)
@@ -328,7 +327,7 @@ async def test_security_features(
             "input_validation": False,
             "encryption": False
         }
-        
+
         # Test API key validation
         try:
             manager = get_api_key_manager()
@@ -339,12 +338,12 @@ async def test_security_features(
             )
             test_result = manager.validate_api_key(test_key, APIKeyPermission.READ)
             results["api_key_validation"] = test_result is not None
-            
+
             # Clean up test key
             manager.revoke_api_key(test_key)
         except Exception:
             pass
-        
+
         # Test audit logging
         try:
             audit_logger = get_audit_logger()
@@ -352,14 +351,14 @@ async def test_security_features(
             results["audit_logging"] = True
         except Exception:
             pass
-        
+
         # Test input validation
         try:
             from app.security.validation import SecurityValidator
             results["input_validation"] = not SecurityValidator.detect_xss("<script>alert('test')</script>")
         except Exception:
             pass
-        
+
         # Test encryption
         try:
             from app.security.encryption import get_encryption_instance
@@ -370,11 +369,11 @@ async def test_security_features(
             results["encryption"] = decrypted == test_data
         except Exception:
             pass
-        
+
         return {
             "security_test_results": results,
             "overall_status": "healthy" if all(results.values()) else "issues_detected"
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Security test failed: {str(e)}")

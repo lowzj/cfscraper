@@ -8,6 +8,14 @@ This package provides:
 - Optimization utilities
 """
 
+from .bottleneck_analyzer import (
+    bottleneck_analyzer,
+    BottleneckAnalyzer,
+    DatabaseProfiler,
+    EndpointProfiler,
+    PerformanceIssue,
+    QueryProfile
+)
 from .profiling import (
     profiler,
     MemoryProfiler,
@@ -18,15 +26,6 @@ from .profiling import (
     get_memory_efficient_dict,
     profile_function,
     profile_async_function
-)
-
-from .bottleneck_analyzer import (
-    bottleneck_analyzer,
-    BottleneckAnalyzer,
-    DatabaseProfiler,
-    EndpointProfiler,
-    PerformanceIssue,
-    QueryProfile
 )
 
 __all__ = [

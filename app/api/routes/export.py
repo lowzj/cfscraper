@@ -1,20 +1,18 @@
-from fastapi import APIRouter, HTTPException, Query, Depends, BackgroundTasks
-from fastapi.responses import FileResponse, StreamingResponse
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
 import os
-import tempfile
 from datetime import datetime
-import asyncio
+from typing import List, Optional, Dict, Any
 
-from app.utils.data_export import (
-    DataExportManager, ExportConfig, ExportFormat, CompressionType,
-    get_export_manager
-)
-from app.models.job import Job
-from app.core.database import get_async_db_dependency
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import and_, select
+
+from app.core.database import get_async_db_dependency
+from app.models.job import Job
+from app.utils.data_export import (
+    DataExportManager, ExportConfig, ExportFormat, CompressionType
+)
 
 router = APIRouter()
 
@@ -71,32 +69,32 @@ class ExportResponse(BaseModel):
 
 
 async def prepare_export_data(
-    db: AsyncSession,
-    job_ids: Optional[List[str]] = None,
-    date_from: Optional[datetime] = None,
-    date_to: Optional[datetime] = None,
-    include_content: bool = True,
-    include_headers: bool = False
+        db: AsyncSession,
+        job_ids: Optional[List[str]] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        include_content: bool = True,
+        include_headers: bool = False
 ) -> List[Dict[str, Any]]:
     """Prepare data for export from database"""
-    
+
     # Build query
     query = select(Job)
-    
+
     # Apply filters
     if job_ids:
         query = query.where(Job.task_id.in_(job_ids))
-    
+
     if date_from:
         query = query.where(Job.created_at >= date_from)
-    
+
     if date_to:
         query = query.where(Job.created_at <= date_to)
-    
+
     # Execute query
     result = await db.execute(query)
     jobs = result.scalars().all()
-    
+
     # Transform data for export
     export_data = []
     for job in jobs:
@@ -112,7 +110,7 @@ async def prepare_export_data(
             "max_retries": job.max_retries,
             "retry_count": job.retry_count,
         }
-        
+
         # Add content if requested
         if include_content and job.result:
             result_data = job.result if isinstance(job.result, dict) else {}
@@ -123,11 +121,11 @@ async def prepare_export_data(
                 "error": result_data.get("error"),
                 "timestamp": result_data.get("timestamp")
             }
-            
+
             # Add headers if requested
             if include_headers and result_data.get("headers"):
                 job_data["result"]["headers"] = result_data.get("headers")
-        
+
         # Add request parameters
         if job.headers:
             job_data["request_headers"] = job.headers
@@ -135,17 +133,17 @@ async def prepare_export_data(
             job_data["request_data"] = job.data
         if job.params:
             job_data["request_params"] = job.params
-        
+
         export_data.append(job_data)
-    
+
     return export_data
 
 
 @router.post("/", response_model=ExportResponse)
 async def export_data(
-    request: ExportRequest,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_async_db_dependency)
+        request: ExportRequest,
+        background_tasks: BackgroundTasks,
+        db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Export scraping job data in various formats
@@ -160,10 +158,10 @@ async def export_data(
             include_content=request.include_content,
             include_headers=request.include_headers
         )
-        
+
         if not export_data:
             raise HTTPException(status_code=404, detail="No data found for export")
-        
+
         # Configure export manager
         config = ExportConfig(
             format=request.format,
@@ -171,26 +169,26 @@ async def export_data(
             include_metadata=request.include_metadata,
             pretty_print=request.pretty_print
         )
-        
+
         export_manager = DataExportManager(config)
-        
+
         # Generate export file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         export_id = f"export_{timestamp}"
-        
+
         # Create exports directory if it doesn't exist
         exports_dir = "exports"
         os.makedirs(exports_dir, exist_ok=True)
-        
+
         # Export data
         output_path = await export_manager.export_data(
             data=export_data,
             output_path=os.path.join(exports_dir, f"{export_id}.{request.format.value}")
         )
-        
+
         # Get file size
         file_size = os.path.getsize(output_path) if os.path.exists(output_path) else 0
-        
+
         return ExportResponse(
             export_id=export_id,
             status="completed",
@@ -200,7 +198,7 @@ async def export_data(
             created_at=datetime.now(),
             download_url=f"/api/v1/export/download/{export_id}"
         )
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
@@ -214,21 +212,21 @@ async def download_export(export_id: str):
         # Find the export file
         exports_dir = "exports"
         export_files = []
-        
+
         if os.path.exists(exports_dir):
             for filename in os.listdir(exports_dir):
                 if filename.startswith(export_id):
                     export_files.append(os.path.join(exports_dir, filename))
-        
+
         if not export_files:
             raise HTTPException(status_code=404, detail="Export file not found")
-        
+
         # Get the most recent file if multiple exist
         export_file = max(export_files, key=os.path.getctime)
-        
+
         if not os.path.exists(export_file):
             raise HTTPException(status_code=404, detail="Export file not found")
-        
+
         # Determine media type based on file extension
         media_type_map = {
             '.json': 'application/json',
@@ -238,21 +236,21 @@ async def download_export(export_id: str):
             '.gz': 'application/gzip',
             '.zip': 'application/zip'
         }
-        
+
         file_ext = None
         for ext in media_type_map.keys():
             if export_file.endswith(ext):
                 file_ext = ext
                 break
-        
+
         media_type = media_type_map.get(file_ext, 'application/octet-stream')
-        
+
         return FileResponse(
             path=export_file,
             media_type=media_type,
             filename=os.path.basename(export_file)
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -267,7 +265,7 @@ async def list_exports():
     try:
         exports_dir = "exports"
         exports = []
-        
+
         if os.path.exists(exports_dir):
             for filename in os.listdir(exports_dir):
                 file_path = os.path.join(exports_dir, filename)
@@ -279,9 +277,9 @@ async def list_exports():
                         "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
                         "download_url": f"/api/v1/export/download/{filename.split('.')[0]}"
                     })
-        
+
         return {"exports": exports}
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list exports: {str(e)}")
 
@@ -294,7 +292,7 @@ async def delete_export(export_id: str):
     try:
         exports_dir = "exports"
         deleted_files = []
-        
+
         if os.path.exists(exports_dir):
             for filename in os.listdir(exports_dir):
                 if filename.startswith(export_id):
@@ -302,12 +300,12 @@ async def delete_export(export_id: str):
                     if os.path.isfile(file_path):
                         os.remove(file_path)
                         deleted_files.append(filename)
-        
+
         if not deleted_files:
             raise HTTPException(status_code=404, detail="Export file not found")
-        
+
         return {"message": f"Deleted {len(deleted_files)} file(s)", "files": deleted_files}
-        
+
     except HTTPException:
         raise
     except Exception as e:

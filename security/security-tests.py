@@ -6,15 +6,13 @@ Automated security tests covering OWASP Top 10 vulnerabilities,
 authentication, authorization, and input validation.
 """
 
-import asyncio
 import json
-import time
-import requests
-import subprocess
 import sys
-from typing import Dict, List, Any
 from dataclasses import dataclass
 from enum import Enum
+from typing import Dict, List, Any
+
+import requests
 
 
 class TestSeverity(Enum):
@@ -36,15 +34,15 @@ class SecurityTestResult:
 
 class SecurityTester:
     """Main security testing class"""
-    
+
     def __init__(self, base_url: str = "http://localhost:8000"):
         self.base_url = base_url
         self.results: List[SecurityTestResult] = []
-    
+
     def run_all_tests(self) -> List[SecurityTestResult]:
         """Run all security tests"""
         print("Starting comprehensive security test suite...")
-        
+
         # OWASP Top 10 Tests
         self.test_injection_vulnerabilities()
         self.test_broken_authentication()
@@ -56,20 +54,20 @@ class SecurityTester:
         self.test_insecure_deserialization()
         self.test_vulnerable_components()
         self.test_insufficient_logging()
-        
+       
         # Additional Security Tests
         self.test_rate_limiting()
         self.test_cors_configuration()
         self.test_security_headers()
         self.test_input_validation()
         self.test_api_key_security()
-        
+
         return self.results
-    
+
     def test_injection_vulnerabilities(self):
         """Test for SQL injection and other injection attacks"""
         print("Testing injection vulnerabilities...")
-        
+
         # SQL Injection payloads
         sql_payloads = [
             "' OR '1'='1",
@@ -79,7 +77,7 @@ class SecurityTester:
             "admin'--",
             "' OR 'x'='x"
         ]
-        
+
         for payload in sql_payloads:
             try:
                 # Test in search endpoint
@@ -88,7 +86,7 @@ class SecurityTester:
                     params={"url_contains": payload},
                     timeout=5
                 )
-                
+
                 # Should not return SQL errors or unexpected data
                 if response.status_code == 500:
                     content = response.text.lower()
@@ -102,10 +100,10 @@ class SecurityTester:
                             remediation="Implement parameterized queries and input validation"
                         ))
                         return
-                
+
             except Exception as e:
                 pass
-        
+
         self.results.append(SecurityTestResult(
             test_name="SQL Injection Test",
             passed=True,
@@ -114,11 +112,11 @@ class SecurityTester:
             details={},
             remediation=""
         ))
-    
+
     def test_broken_authentication(self):
         """Test authentication mechanisms"""
         print("Testing authentication security...")
-        
+
         # Test with invalid API keys
         invalid_keys = [
             "invalid_key",
@@ -128,7 +126,7 @@ class SecurityTester:
             "admin",
             "test123"
         ]
-        
+
         for key in invalid_keys:
             try:
                 headers = {"Authorization": f"Bearer {key}"}
@@ -138,7 +136,7 @@ class SecurityTester:
                     headers=headers,
                     timeout=5
                 )
-                
+
                 # Should reject invalid keys
                 if response.status_code == 200:
                     self.results.append(SecurityTestResult(
@@ -150,10 +148,10 @@ class SecurityTester:
                         remediation="Implement proper API key validation"
                     ))
                     return
-                    
+
             except Exception as e:
                 pass
-        
+
         self.results.append(SecurityTestResult(
             test_name="Authentication Test",
             passed=True,
@@ -162,15 +160,15 @@ class SecurityTester:
             details={},
             remediation=""
         ))
-    
+
     def test_sensitive_data_exposure(self):
         """Test for sensitive data exposure"""
         print("Testing sensitive data exposure...")
-        
+
         try:
             # Check if error messages expose sensitive information
             response = requests.get(f"{self.base_url}/api/v1/jobs/invalid_id", timeout=5)
-            
+
             sensitive_patterns = [
                 "database",
                 "password",
@@ -181,10 +179,10 @@ class SecurityTester:
                 "stack trace",
                 "traceback"
             ]
-            
+
             content = response.text.lower()
             exposed_data = [pattern for pattern in sensitive_patterns if pattern in content]
-            
+
             if exposed_data:
                 self.results.append(SecurityTestResult(
                     test_name="Sensitive Data Exposure",
@@ -203,7 +201,7 @@ class SecurityTester:
                     details={},
                     remediation=""
                 ))
-                
+
         except Exception as e:
             self.results.append(SecurityTestResult(
                 test_name="Sensitive Data Exposure Test",
@@ -213,16 +211,16 @@ class SecurityTester:
                 details={"error": str(e)},
                 remediation="Investigate test failure"
             ))
-    
+
     def test_xml_external_entities(self):
         """Test for XXE vulnerabilities"""
         print("Testing XXE vulnerabilities...")
-        
+
         # XXE payload
         xxe_payload = """<?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
         <data>&xxe;</data>"""
-        
+
         try:
             # Test if any endpoint accepts XML
             response = requests.post(
@@ -231,7 +229,7 @@ class SecurityTester:
                 headers={"Content-Type": "application/xml"},
                 timeout=5
             )
-            
+
             # Should not process XML or return file contents
             if "root:" in response.text:
                 self.results.append(SecurityTestResult(
@@ -251,7 +249,7 @@ class SecurityTester:
                     details={},
                     remediation=""
                 ))
-                
+
         except Exception as e:
             self.results.append(SecurityTestResult(
                 test_name="XXE Test",
@@ -261,22 +259,22 @@ class SecurityTester:
                 details={},
                 remediation=""
             ))
-    
+
     def test_broken_access_control(self):
         """Test access control mechanisms"""
         print("Testing access control...")
-        
+
         # Test admin endpoints without proper authentication
         admin_endpoints = [
             "/api/v1/admin/api-keys",
             "/api/v1/admin/security/status",
             "/api/v1/admin/audit/events"
         ]
-        
+
         for endpoint in admin_endpoints:
             try:
                 response = requests.get(f"{self.base_url}{endpoint}", timeout=5)
-                
+
                 # Should require authentication
                 if response.status_code == 200:
                     self.results.append(SecurityTestResult(
@@ -288,10 +286,10 @@ class SecurityTester:
                         remediation="Implement proper access control for admin endpoints"
                     ))
                     return
-                    
+
             except Exception as e:
                 pass
-        
+
         self.results.append(SecurityTestResult(
             test_name="Access Control Test",
             passed=True,
@@ -300,15 +298,15 @@ class SecurityTester:
             details={},
             remediation=""
         ))
-    
+
     def test_security_misconfiguration(self):
         """Test for security misconfigurations"""
         print("Testing security configuration...")
-        
+
         try:
             # Check for debug information exposure
             response = requests.get(f"{self.base_url}/docs", timeout=5)
-            
+
             # API docs should be protected in production
             if response.status_code == 200 and "swagger" in response.text.lower():
                 self.results.append(SecurityTestResult(
@@ -319,7 +317,7 @@ class SecurityTester:
                     details={"endpoint": "/docs"},
                     remediation="Protect API documentation in production"
                 ))
-            
+
             # Check security headers
             headers_to_check = [
                 "X-Content-Type-Options",
@@ -327,10 +325,10 @@ class SecurityTester:
                 "X-XSS-Protection",
                 "Strict-Transport-Security"
             ]
-            
+
             response = requests.get(f"{self.base_url}/", timeout=5)
             missing_headers = [h for h in headers_to_check if h not in response.headers]
-            
+
             if missing_headers:
                 self.results.append(SecurityTestResult(
                     test_name="Missing Security Headers",
@@ -349,7 +347,7 @@ class SecurityTester:
                     details={},
                     remediation=""
                 ))
-                
+
         except Exception as e:
             self.results.append(SecurityTestResult(
                 test_name="Security Configuration Test",
@@ -359,11 +357,11 @@ class SecurityTester:
                 details={"error": str(e)},
                 remediation="Investigate test failure"
             ))
-    
+
     def test_cross_site_scripting(self):
         """Test for XSS vulnerabilities"""
         print("Testing XSS vulnerabilities...")
-        
+
         xss_payloads = [
             "<script>alert('xss')</script>",
             "javascript:alert('xss')",
@@ -371,7 +369,7 @@ class SecurityTester:
             "';alert('xss');//",
             "<svg onload=alert('xss')>"
         ]
-        
+
         for payload in xss_payloads:
             try:
                 # Test in job creation
@@ -383,7 +381,7 @@ class SecurityTester:
                     },
                     timeout=5
                 )
-                
+
                 # Check if payload is reflected unescaped
                 if payload in response.text and "<script>" in response.text:
                     self.results.append(SecurityTestResult(
@@ -395,10 +393,10 @@ class SecurityTester:
                         remediation="Implement proper input sanitization and output encoding"
                     ))
                     return
-                    
+
             except Exception as e:
                 pass
-        
+
         self.results.append(SecurityTestResult(
             test_name="XSS Test",
             passed=True,
@@ -407,11 +405,11 @@ class SecurityTester:
             details={},
             remediation=""
         ))
-    
+
     def test_rate_limiting(self):
         """Test rate limiting functionality"""
         print("Testing rate limiting...")
-        
+
         try:
             # Make rapid requests
             responses = []
@@ -420,7 +418,7 @@ class SecurityTester:
                 responses.append(response.status_code)
                 if response.status_code == 429:
                     break
-            
+
             # Should eventually get rate limited
             if 429 in responses:
                 self.results.append(SecurityTestResult(
@@ -440,7 +438,7 @@ class SecurityTester:
                     details={"responses": responses},
                     remediation="Verify rate limiting configuration"
                 ))
-                
+
         except Exception as e:
             self.results.append(SecurityTestResult(
                 test_name="Rate Limiting Test",
@@ -450,16 +448,16 @@ class SecurityTester:
                 details={"error": str(e)},
                 remediation="Investigate test failure"
             ))
-    
+
     def generate_report(self) -> Dict[str, Any]:
         """Generate security test report"""
         passed_tests = [r for r in self.results if r.passed]
         failed_tests = [r for r in self.results if not r.passed]
-        
+
         severity_counts = {}
         for severity in TestSeverity:
             severity_counts[severity.value] = len([r for r in failed_tests if r.severity == severity])
-        
+
         return {
             "summary": {
                 "total_tests": len(self.results),
@@ -494,41 +492,41 @@ class SecurityTester:
 def main():
     """Run security tests"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="CFScraper Security Test Suite")
     parser.add_argument("--url", default="http://localhost:8000", help="Base URL to test")
     parser.add_argument("--output", default="security-test-report.json", help="Output file")
-    
+
     args = parser.parse_args()
-    
+
     tester = SecurityTester(args.url)
     results = tester.run_all_tests()
     report = tester.generate_report()
-    
+
     # Save report
     with open(args.output, 'w') as f:
         json.dump(report, f, indent=2)
-    
+
     # Print summary
     print(f"\nSecurity Test Summary:")
     print(f"Total Tests: {report['summary']['total_tests']}")
     print(f"Passed: {report['summary']['passed']}")
     print(f"Failed: {report['summary']['failed']}")
     print(f"Pass Rate: {report['summary']['pass_rate']:.1f}%")
-    
+
     if report['summary']['failed'] > 0:
         print(f"\nFailed Tests:")
         for test in report['failed_tests']:
             print(f"- {test['test_name']} ({test['severity']}): {test['description']}")
-    
+
     print(f"\nDetailed report saved to: {args.output}")
-    
+
     # Exit with error code if critical/high severity issues found
     critical_high_issues = report['severity_breakdown'].get('critical', 0) + report['severity_breakdown'].get('high', 0)
     if critical_high_issues > 0:
         print(f"\nCritical/High severity issues found: {critical_high_issues}")
         sys.exit(1)
-    
+
     sys.exit(0)
 
 

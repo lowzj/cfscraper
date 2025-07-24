@@ -1,13 +1,14 @@
-from typing import Dict, Any, Optional
-import time
 import asyncio
+import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, Any, Optional
 
 try:
     from seleniumbase import BaseCase
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
+
     HAS_SELENIUM = True
 except ImportError:
     HAS_SELENIUM = False
@@ -20,8 +21,9 @@ from app.utils.stealth_manager import get_stealth_manager, get_captcha_detector,
 
 class SeleniumScraper(BaseScraper):
     """SeleniumBase-based scraper for JavaScript-heavy websites"""
-    
-    def __init__(self, timeout: int = None, headless: bool = True, use_proxy_rotation: bool = True, use_user_agent_rotation: bool = True, use_stealth_mode: bool = True):
+
+    def __init__(self, timeout: int = None, headless: bool = True, use_proxy_rotation: bool = True,
+                 use_user_agent_rotation: bool = True, use_stealth_mode: bool = True):
         super().__init__(timeout or settings.selenium_timeout)
         if not HAS_SELENIUM:
             raise ImportError("seleniumbase is not installed. Install it with: pip install seleniumbase")
@@ -34,14 +36,14 @@ class SeleniumScraper(BaseScraper):
         self.current_proxy = None
         self.current_user_agent = None
         self.current_viewport = None
-    
+
     async def scrape(
-        self,
-        url: str,
-        method: str = "GET",
-        headers: Optional[Dict[str, str]] = None,
-        data: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, str]] = None
+            self,
+            url: str,
+            method: str = "GET",
+            headers: Optional[Dict[str, str]] = None,
+            data: Optional[Dict[str, Any]] = None,
+            params: Optional[Dict[str, str]] = None
     ) -> ScraperResult:
         """
         Scrape a URL using SeleniumBase
@@ -58,7 +60,7 @@ class SeleniumScraper(BaseScraper):
         """
         if not HAS_SELENIUM:
             raise ImportError("seleniumbase is not installed")
-            
+
         if method.upper() != "GET":
             raise ValueError("SeleniumScraper currently only supports GET requests")
         start_time = time.time()
@@ -140,29 +142,29 @@ class SeleniumScraper(BaseScraper):
                 await proxy_pool.report_proxy_result(proxy_info, False)
 
             return self._handle_error(e, url)
-    
+
     def _scrape_with_selenium(self, url: str) -> str:
         """Perform the actual scraping with Selenium (blocking)"""
         try:
             # Initialize the driver if not already done
             if not self.driver:
                 self._init_driver()
-            
+
             # Navigate to the URL
             self.driver.get(url)
-            
+
             # Wait for the page to load
             WebDriverWait(self.driver, self.timeout).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
-            
+
             # Get the page source
             return self.driver.page_source
-            
+
         except Exception as e:
             self.logger.error(f"Selenium scraping failed: {str(e)}")
             raise
-    
+
     def _init_driver(self):
         """Initialize the Selenium driver"""
         try:
@@ -200,7 +202,8 @@ class SeleniumScraper(BaseScraper):
                         self.current_viewport["width"],
                         self.current_viewport["height"]
                     )
-                    self.logger.info(f"Set viewport: {self.current_viewport['width']}x{self.current_viewport['height']}")
+                    self.logger.info(
+                        f"Set viewport: {self.current_viewport['width']}x{self.current_viewport['height']}")
                 except Exception as e:
                     self.logger.warning(f"Failed to set viewport: {str(e)}")
 
@@ -215,7 +218,7 @@ class SeleniumScraper(BaseScraper):
         if not self.driver:
             self.logger.warning("Driver not initialized, skipping stealth features")
             return
-            
+
         try:
             # Inject stealth scripts
             js_bypass_manager = get_js_bypass_manager()
@@ -249,7 +252,7 @@ class SeleniumScraper(BaseScraper):
 
         except Exception as e:
             self.logger.warning(f"Failed to apply stealth features: {str(e)}")
-    
+
     async def close(self):
         """Clean up resources"""
         if self.driver:
@@ -262,10 +265,10 @@ class SeleniumScraper(BaseScraper):
                 self.logger.info("Selenium driver closed")
             except Exception as e:
                 self.logger.error(f"Error closing Selenium driver: {str(e)}")
-        
+
         if hasattr(self, 'executor'):
             self.executor.shutdown(wait=True)
-    
+
     def __del__(self):
         """Cleanup on deletion"""
         if self.driver:

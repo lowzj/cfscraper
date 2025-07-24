@@ -4,12 +4,13 @@ import hmac
 import json
 import logging
 import time
-from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-import httpx
+from typing import Dict, List, Optional, Any, Callable
 from urllib.parse import urlparse
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ class WebhookConfig:
     retry_delay: int = 60  # seconds
     enabled: bool = True
     verify_ssl: bool = True
-    
+
     def __post_init__(self):
         """Validate webhook configuration"""
         parsed_url = urlparse(self.url)
@@ -74,43 +75,43 @@ class WebhookDelivery:
 
 class WebhookSigner:
     """Handles webhook signature generation and verification"""
-    
+
     @staticmethod
     def generate_signature(payload: str, secret: str, algorithm: str = "sha256") -> str:
         """Generate HMAC signature for webhook payload"""
         if not secret:
             return ""
-        
+
         signature = hmac.new(
             secret.encode('utf-8'),
             payload.encode('utf-8'),
             getattr(hashlib, algorithm)
         ).hexdigest()
-        
+
         return f"{algorithm}={signature}"
-    
+
     @staticmethod
     def verify_signature(payload: str, signature: str, secret: str) -> bool:
         """Verify webhook signature"""
         if not secret or not signature:
             return not secret  # If no secret is configured, don't require signature
-        
+
         # Extract algorithm and signature
         try:
             algorithm, expected_signature = signature.split('=', 1)
         except ValueError:
             return False
-        
+
         # Generate expected signature
         expected = WebhookSigner.generate_signature(payload, secret, algorithm)
-        
+
         # Compare signatures (constant time comparison)
         return hmac.compare_digest(signature, expected)
 
 
 class WebhookDeliveryService:
     """Handles webhook delivery with retry logic"""
-    
+
     def __init__(self):
         self._deliveries: Dict[str, WebhookDelivery] = {}
         self._webhooks: Dict[str, WebhookConfig] = {}
@@ -118,14 +119,14 @@ class WebhookDeliveryService:
         self._delivery_queue: asyncio.Queue = asyncio.Queue()
         self._worker_task: Optional[asyncio.Task] = None
         self._running = False
-    
+
     async def register_webhook(self, webhook_id: str, config: WebhookConfig) -> str:
         """Register a webhook endpoint"""
         async with self._lock:
             self._webhooks[webhook_id] = config
             logger.info(f"Registered webhook: {webhook_id} -> {config.url}")
         return webhook_id
-    
+
     async def unregister_webhook(self, webhook_id: str) -> bool:
         """Unregister a webhook endpoint"""
         async with self._lock:
@@ -134,12 +135,12 @@ class WebhookDeliveryService:
                 logger.info(f"Unregistered webhook: {webhook_id}")
                 return True
         return False
-    
+
     async def send_webhook(
-        self,
-        event: WebhookEvent,
-        payload: Dict[str, Any],
-        webhook_id: Optional[str] = None
+            self,
+            event: WebhookEvent,
+            payload: Dict[str, Any],
+            webhook_id: Optional[str] = None
     ) -> List[str]:
         """
         Send webhook to registered endpoints
@@ -153,10 +154,10 @@ class WebhookDeliveryService:
             List of delivery IDs
         """
         delivery_ids = []
-        
+
         async with self._lock:
             webhooks_to_notify = {}
-            
+
             if webhook_id:
                 # Send to specific webhook
                 if webhook_id in self._webhooks:
@@ -166,11 +167,11 @@ class WebhookDeliveryService:
                 for wh_id, config in self._webhooks.items():
                     if config.enabled and (not config.events or event in config.events):
                         webhooks_to_notify[wh_id] = config
-        
+
         # Create deliveries
         for wh_id, config in webhooks_to_notify.items():
             delivery_id = f"{wh_id}_{event}_{int(time.time())}"
-            
+
             delivery = WebhookDelivery(
                 id=delivery_id,
                 webhook_id=wh_id,
@@ -179,27 +180,27 @@ class WebhookDeliveryService:
                 url=config.url,
                 max_retries=config.max_retries
             )
-            
+
             async with self._lock:
                 self._deliveries[delivery_id] = delivery
-            
+
             # Queue for delivery
             await self._delivery_queue.put(delivery_id)
             delivery_ids.append(delivery_id)
-            
+
             logger.info(f"Queued webhook delivery: {delivery_id}")
-        
+
         return delivery_ids
-    
+
     async def start_delivery_worker(self):
         """Start the webhook delivery worker"""
         if self._running:
             return
-        
+
         self._running = True
         self._worker_task = asyncio.create_task(self._delivery_worker())
         logger.info("Webhook delivery worker started")
-    
+
     async def stop_delivery_worker(self):
         """Stop the webhook delivery worker"""
         self._running = False
@@ -211,7 +212,7 @@ class WebhookDeliveryService:
                 pass
             self._worker_task = None
         logger.info("Webhook delivery worker stopped")
-    
+
     async def _delivery_worker(self):
         """Background worker for processing webhook deliveries"""
         while self._running:
@@ -224,33 +225,33 @@ class WebhookDeliveryService:
                     )
                 except asyncio.TimeoutError:
                     continue
-                
+
                 # Process delivery
                 await self._process_delivery(delivery_id)
-                
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in webhook delivery worker: {str(e)}")
                 await asyncio.sleep(1)
-    
+
     async def _process_delivery(self, delivery_id: str):
         """Process a single webhook delivery"""
         async with self._lock:
             delivery = self._deliveries.get(delivery_id)
             if not delivery:
                 return
-            
+
             webhook_config = self._webhooks.get(delivery.webhook_id)
             if not webhook_config:
                 delivery.status = WebhookStatus.FAILED
                 delivery.error_message = "Webhook configuration not found"
                 return
-        
+
         # Attempt delivery
         try:
             success = await self._attempt_delivery(delivery, webhook_config)
-            
+
             async with self._lock:
                 if success:
                     delivery.status = WebhookStatus.DELIVERED
@@ -258,7 +259,7 @@ class WebhookDeliveryService:
                 else:
                     delivery.attempts += 1
                     delivery.last_attempt_at = datetime.now()
-                    
+
                     if delivery.attempts >= delivery.max_retries:
                         delivery.status = WebhookStatus.FAILED
                         logger.error(f"Webhook delivery failed after {delivery.attempts} attempts: {delivery_id}")
@@ -267,17 +268,17 @@ class WebhookDeliveryService:
                         delivery.next_retry_at = datetime.now() + timedelta(
                             seconds=webhook_config.retry_delay * delivery.attempts
                         )
-                        
+
                         # Schedule retry
                         asyncio.create_task(self._schedule_retry(delivery_id, delivery.next_retry_at))
                         logger.warning(f"Webhook delivery failed, scheduling retry: {delivery_id}")
-        
+
         except Exception as e:
             async with self._lock:
                 delivery.status = WebhookStatus.FAILED
                 delivery.error_message = str(e)
             logger.error(f"Webhook delivery error: {delivery_id} - {str(e)}")
-    
+
     async def _attempt_delivery(self, delivery: WebhookDelivery, config: WebhookConfig) -> bool:
         """Attempt to deliver a webhook"""
         try:
@@ -288,59 +289,59 @@ class WebhookDeliveryService:
                 "delivery_id": delivery.id,
                 "data": delivery.payload
             }
-            
+
             payload_json = json.dumps(payload_data, default=str)
-            
+
             # Generate signature
             signature = ""
             if config.secret:
                 signature = WebhookSigner.generate_signature(payload_json, config.secret)
-            
+
             # Prepare headers
             headers = {
                 "Content-Type": "application/json",
                 "User-Agent": "CFScraper-Webhook/1.0",
                 **config.headers
             }
-            
+
             if signature:
                 headers["X-Webhook-Signature"] = signature
-            
+
             # Make HTTP request
             async with httpx.AsyncClient(
-                timeout=config.timeout,
-                verify=config.verify_ssl
+                    timeout=config.timeout,
+                    verify=config.verify_ssl
             ) as client:
                 response = await client.post(
                     config.url,
                     content=payload_json,
                     headers=headers
                 )
-                
+
                 delivery.response_status = response.status_code
                 delivery.response_body = response.text[:1000]  # Limit response body size
-                
+
                 # Consider 2xx status codes as success
                 return 200 <= response.status_code < 300
-                
+
         except Exception as e:
             delivery.error_message = str(e)
             return False
-    
+
     async def _schedule_retry(self, delivery_id: str, retry_time: datetime):
         """Schedule a retry for a failed delivery"""
         delay = (retry_time - datetime.now()).total_seconds()
         if delay > 0:
             await asyncio.sleep(delay)
-        
+
         # Re-queue for delivery
         await self._delivery_queue.put(delivery_id)
-    
+
     async def get_delivery_status(self, delivery_id: str) -> Optional[WebhookDelivery]:
         """Get status of a webhook delivery"""
         async with self._lock:
             return self._deliveries.get(delivery_id)
-    
+
     async def get_webhook_stats(self, webhook_id: str) -> Dict[str, Any]:
         """Get statistics for a webhook"""
         async with self._lock:
@@ -348,13 +349,13 @@ class WebhookDeliveryService:
                 d for d in self._deliveries.values()
                 if d.webhook_id == webhook_id
             ]
-            
+
             total = len(webhook_deliveries)
             delivered = len([d for d in webhook_deliveries if d.status == WebhookStatus.DELIVERED])
             failed = len([d for d in webhook_deliveries if d.status == WebhookStatus.FAILED])
             pending = len([d for d in webhook_deliveries if d.status == WebhookStatus.PENDING])
             retrying = len([d for d in webhook_deliveries if d.status == WebhookStatus.RETRYING])
-            
+
             return {
                 "webhook_id": webhook_id,
                 "total_deliveries": total,
@@ -385,10 +386,10 @@ class WebhookTester:
         self.webhook_service = webhook_service
 
     async def test_webhook_endpoint(
-        self,
-        url: str,
-        secret: Optional[str] = None,
-        timeout: int = 10
+            self,
+            url: str,
+            secret: Optional[str] = None,
+            timeout: int = 10
     ) -> Dict[str, Any]:
         """Test a webhook endpoint with a sample payload"""
         test_payload = {
@@ -448,10 +449,10 @@ class WebhookTester:
             }
 
     async def validate_webhook_signature(
-        self,
-        payload: str,
-        signature: str,
-        secret: str
+            self,
+            payload: str,
+            signature: str,
+            secret: str
     ) -> Dict[str, Any]:
         """Validate a webhook signature"""
         try:
@@ -502,6 +503,7 @@ class WebhookEventFilter:
 
     def add_status_filter(self, allowed_statuses: List[str]):
         """Add filter for job status"""
+
         def status_filter(payload: Dict[str, Any]) -> bool:
             job_status = payload.get("status")
             return job_status in allowed_statuses
@@ -510,6 +512,7 @@ class WebhookEventFilter:
 
     def add_url_pattern_filter(self, patterns: List[str]):
         """Add filter for URL patterns"""
+
         def url_pattern_filter(payload: Dict[str, Any]) -> bool:
             url = payload.get("url", "")
             return any(pattern in url for pattern in patterns)
@@ -518,6 +521,7 @@ class WebhookEventFilter:
 
     def add_response_time_filter(self, max_response_time: float):
         """Add filter for response time"""
+
         def response_time_filter(payload: Dict[str, Any]) -> bool:
             result = payload.get("result", {})
             response_time = result.get("response_time", 0)

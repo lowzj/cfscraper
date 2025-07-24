@@ -2,12 +2,13 @@ import asyncio
 import logging
 import random
 import time
-from typing import Dict, List, Optional, Tuple, Any
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
-import httpx
+from typing import Dict, List, Optional, Any
 from urllib.parse import urlparse
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -44,19 +45,19 @@ class ProxyInfo:
     average_response_time: float = 0.0
     total_response_time: float = 0.0
     total_requests: int = 0
-    
+
     def __post_init__(self):
         """Initialize computed fields"""
         if self.last_checked is None:
             self.last_checked = datetime.now()
-    
+
     @property
     def url(self) -> str:
         """Get the proxy URL"""
         if self.username and self.password:
             return f"{self.protocol}://{self.username}:{self.password}@{self.host}:{self.port}"
         return f"{self.protocol}://{self.host}:{self.port}"
-    
+
     @property
     def success_rate(self) -> float:
         """Calculate success rate"""
@@ -64,16 +65,16 @@ class ProxyInfo:
         if total == 0:
             return 0.0
         return self.success_count / total
-    
+
     @property
     def is_healthy(self) -> bool:
         """Check if proxy is considered healthy"""
         return (
-            self.status == ProxyStatus.ACTIVE and
-            self.success_rate >= 0.7 and  # At least 70% success rate
-            self.failure_count < 5  # Less than 5 consecutive failures
+                self.status == ProxyStatus.ACTIVE and
+                self.success_rate >= 0.7 and  # At least 70% success rate
+                self.failure_count < 5  # Less than 5 consecutive failures
         )
-    
+
     def update_stats(self, success: bool, response_time: float = 0.0):
         """Update proxy statistics"""
         if success:
@@ -88,7 +89,7 @@ class ProxyInfo:
             self.failure_count += 1
             if self.failure_count >= 3:
                 self.status = ProxyStatus.FAILED
-        
+
         self.last_checked = datetime.now()
 
 
@@ -106,7 +107,7 @@ class ProxyPoolConfig:
 
 class ProxyPool:
     """Manages a pool of proxy servers with health checking and rotation"""
-    
+
     def __init__(self, config: Optional[ProxyPoolConfig] = None):
         self.config = config or ProxyPoolConfig()
         self.proxies: List[ProxyInfo] = []
@@ -114,14 +115,14 @@ class ProxyPool:
         self._lock = asyncio.Lock()
         self._health_check_task: Optional[asyncio.Task] = None
         self._running = False
-    
+
     async def add_proxy(
-        self,
-        host: str,
-        port: int,
-        protocol: ProxyProtocol = ProxyProtocol.HTTP,
-        username: Optional[str] = None,
-        password: Optional[str] = None
+            self,
+            host: str,
+            port: int,
+            protocol: ProxyProtocol = ProxyProtocol.HTTP,
+            username: Optional[str] = None,
+            password: Optional[str] = None
     ) -> ProxyInfo:
         """Add a proxy to the pool"""
         proxy = ProxyInfo(
@@ -131,17 +132,17 @@ class ProxyPool:
             username=username,
             password=password
         )
-        
+
         async with self._lock:
             self.proxies.append(proxy)
             logger.info(f"Added proxy: {proxy.url}")
-        
+
         # Test the proxy immediately
         if self.config.enable_health_checks:
             await self._check_proxy_health(proxy)
-        
+
         return proxy
-    
+
     async def add_proxies_from_list(self, proxy_urls: List[str]):
         """Add multiple proxies from a list of URLs"""
         for proxy_url in proxy_urls:
@@ -150,7 +151,7 @@ class ProxyPool:
                 if not parsed.hostname or not parsed.port:
                     logger.warning(f"Invalid proxy URL: {proxy_url}")
                     continue
-                
+
                 protocol = ProxyProtocol(parsed.scheme) if parsed.scheme else ProxyProtocol.HTTP
                 await self.add_proxy(
                     host=parsed.hostname,
@@ -161,16 +162,16 @@ class ProxyPool:
                 )
             except Exception as e:
                 logger.error(f"Failed to add proxy {proxy_url}: {str(e)}")
-    
+
     async def get_proxy(self) -> Optional[ProxyInfo]:
         """Get the next proxy based on rotation strategy"""
         async with self._lock:
             healthy_proxies = [p for p in self.proxies if p.is_healthy]
-            
+
             if not healthy_proxies:
                 logger.warning("No healthy proxies available")
                 return None
-            
+
             if self.config.rotation_strategy == "random":
                 return random.choice(healthy_proxies)
             elif self.config.rotation_strategy == "weighted":
@@ -279,8 +280,8 @@ class ProxyPool:
 
         try:
             async with httpx.AsyncClient(
-                proxies=proxy.url,
-                timeout=self.config.health_check_timeout
+                    proxies=proxy.url,
+                    timeout=self.config.health_check_timeout
             ) as client:
                 response = await client.get(self.config.health_check_url)
                 response_time = time.time() - start_time
@@ -379,11 +380,11 @@ class UserAgentRotator:
     # Window sizes that match common screen resolutions
     WINDOW_SIZES = [
         "1920,1080",  # Full HD
-        "1366,768",   # Common laptop
-        "1440,900",   # MacBook Air
-        "1536,864",   # Surface Pro
-        "1280,720",   # HD
-        "1600,900",   # 16:9 widescreen
+        "1366,768",  # Common laptop
+        "1440,900",  # MacBook Air
+        "1536,864",  # Surface Pro
+        "1280,720",  # HD
+        "1600,900",  # 16:9 widescreen
         "1680,1050",  # 16:10 widescreen
         "2560,1440",  # QHD
     ]

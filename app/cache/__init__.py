@@ -8,12 +8,12 @@ This package provides optimized caching with:
 - Performance monitoring and metrics
 """
 
-from .redis_client import redis_manager, RedisConnectionManager, RedisPoolConfig
 from .caching import cache_manager, CacheManager, CacheConfig, cached
+from .redis_client import redis_manager, RedisConnectionManager, RedisPoolConfig
 
 __all__ = [
     'redis_manager',
-    'RedisConnectionManager', 
+    'RedisConnectionManager',
     'RedisPoolConfig',
     'cache_manager',
     'CacheManager',

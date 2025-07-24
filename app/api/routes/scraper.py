@@ -1,40 +1,41 @@
 """
 Core scraping endpoints
 """
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Response, Request
-from fastapi.responses import StreamingResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
-from datetime import datetime, timezone
-import uuid
 import io
 import json
+import uuid
+from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_db_dependency
-from app.models.job import Job, JobStatus, ScraperType
-from app.models.requests import ScrapeRequest, BulkScrapeRequest
-from app.security.validation import SecureScrapeRequest
-from app.security.authentication import verify_api_key, require_api_key, APIKeyPermission, APIKeyInfo, security
+from app.models.job import Job, JobStatus
+from app.models.requests import BulkScrapeRequest
 from app.models.responses import (
     ScrapeResponse,
     JobStatusResponse,
     JobResult,
-    BulkScrapeResponse,
-    DownloadResponse
+    BulkScrapeResponse
 )
+from app.security.authentication import require_api_key, APIKeyPermission, APIKeyInfo, security
+from app.security.validation import SecureScrapeRequest
 
 
 # Wrapper function for write permission requirement
 async def require_write_permission(
-    request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ) -> APIKeyInfo:
     """Require API key with WRITE permission"""
     return await require_api_key(request, credentials, APIKeyPermission.WRITE)
+
+
 from .common import (
-    get_job_queue, 
-    get_job_executor,
+    get_job_queue,
     build_job_result,
     build_job_status_response,
     get_job_by_id,
@@ -48,7 +49,7 @@ router = APIRouter()
 
 class CustomJSONEncoder(json.JSONEncoder):
     """Custom JSON encoder that handles datetime and other non-serializable objects"""
-    
+
     def default(self, obj):
         if isinstance(obj, datetime):
             return obj.isoformat()
@@ -62,10 +63,10 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 @router.post("/", response_model=ScrapeResponse)
 async def create_scrape_job(
-    request: SecureScrapeRequest,  # Use secure validation
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_async_db_dependency),
-    api_key_info: APIKeyInfo = Depends(require_write_permission)
+        request: SecureScrapeRequest,  # Use secure validation
+        background_tasks: BackgroundTasks,
+        db: AsyncSession = Depends(get_async_db_dependency),
+        api_key_info: APIKeyInfo = Depends(require_write_permission)
 ):
     """
     Create a new scraping job
@@ -84,7 +85,7 @@ async def create_scrape_job(
     try:
         # Generate unique job ID
         job_id = f"job_{str(uuid.uuid4())}"
-        
+
         # Prepare job data
         job_data = {
             'job_id': job_id,
@@ -99,7 +100,7 @@ async def create_scrape_job(
             'priority': request.priority,
             'callback_url': str(request.callback_url) if request.callback_url else None
         }
-        
+
         # Create job record in database (but don't commit yet)
         job = Job(
             task_id=job_id,
@@ -115,9 +116,9 @@ async def create_scrape_job(
             priority=request.priority,
             created_at=datetime.now(timezone.utc)
         )
-        
+
         db.add(job)
-        
+
         # Try to enqueue job first
         try:
             await get_job_queue().enqueue(job_data)
@@ -131,7 +132,7 @@ async def create_scrape_job(
                 status_code=500,
                 detail=f"Failed to enqueue job: {str(enqueue_error)}"
             )
-        
+
         return ScrapeResponse(
             job_id=job_id,
             task_id=job_id,
@@ -139,7 +140,7 @@ async def create_scrape_job(
             message=f"Job {job_id} queued successfully",
             created_at=datetime.now(timezone.utc)
         )
-        
+
     except HTTPException:
         # Re-raise HTTPExceptions to preserve status code and detail
         raise
@@ -150,8 +151,8 @@ async def create_scrape_job(
 
 @router.get("/{job_id}", response_model=JobStatusResponse)
 async def get_job_status(
-    job_id: str,
-    db: AsyncSession = Depends(get_async_db_dependency)
+        job_id: str,
+        db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Get the status of a specific job
@@ -169,20 +170,20 @@ async def get_job_status(
     try:
         # Get job from database
         job = await get_job_by_id(job_id, db)
-        
+
         # Check queue status
         queue_status = await get_job_queue().get_job_status(job_id)
-        
+
         return build_job_status_response(job, queue_status)
-        
+
     except Exception as e:
         raise handle_route_exception(e, "get job status")
 
 
 @router.get("/{job_id}/result", response_model=JobResult)
 async def get_job_result(
-    job_id: str,
-    db: AsyncSession = Depends(get_async_db_dependency)
+        job_id: str,
+        db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Get the result of a completed job
@@ -200,22 +201,22 @@ async def get_job_result(
     try:
         # Get job from database
         job = await get_job_by_id(job_id, db)
-        
+
         # Validate job status and result
         validate_job_completed(job)
         validate_job_has_result(job)
-        
+
         return build_job_result(job.result)
-        
+
     except Exception as e:
         raise handle_route_exception(e, "get job result")
 
 
 @router.get("/{job_id}/download")
 async def get_job_download(
-    job_id: str,
-    format: str = "html",
-    db: AsyncSession = Depends(get_async_db_dependency)
+        job_id: str,
+        format: str = "html",
+        db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Download job result as a file
@@ -233,11 +234,11 @@ async def get_job_download(
     try:
         # Get job from database
         job = await get_job_by_id(job_id, db)
-        
+
         # Validate job status and result
         validate_job_completed(job)
         validate_job_has_result(job)
-        
+
         # Determine content and filename based on format
         if format.lower() == "html":
             content = job.result.get('content', '')
@@ -254,13 +255,13 @@ async def get_job_download(
             content_type = "text/plain"
         else:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Unsupported format. Use 'html', 'json', or 'txt'"
             )
-        
+
         # Create download stream
         content_stream = io.BytesIO(content.encode('utf-8'))
-        
+
         return StreamingResponse(
             io.BytesIO(content.encode('utf-8')),
             media_type=content_type,
@@ -268,15 +269,15 @@ async def get_job_download(
                 "Content-Disposition": f"attachment; filename={filename}"
             }
         )
-        
+
     except Exception as e:
         raise handle_route_exception(e, "download job result")
 
 
 @router.delete("/{job_id}")
 async def cancel_job(
-    job_id: str,
-    db: AsyncSession = Depends(get_async_db_dependency)
+        job_id: str,
+        db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Cancel a specific job
@@ -293,23 +294,23 @@ async def cancel_job(
     try:
         # Get job from database
         job = await get_job_by_id(job_id, db)
-        
+
         if job.status in [JobStatus.COMPLETED, JobStatus.CANCELLED]:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"Cannot cancel job with status: {job.status}"
             )
-        
+
         # Update job status in queue
         await get_job_queue().update_job_status(job_id, JobStatus.CANCELLED)
-        
+
         # Update job in database
         job.status = JobStatus.CANCELLED
         job.completed_at = datetime.now(timezone.utc)
         await db.commit()
-        
+
         return {'message': f'Job {job_id} cancelled successfully'}
-        
+
     except Exception as e:
         await db.rollback()
         raise handle_route_exception(e, "cancel job")
@@ -317,9 +318,9 @@ async def cancel_job(
 
 @router.post("/bulk", response_model=BulkScrapeResponse)
 async def create_bulk_scrape_jobs(
-    request: BulkScrapeRequest,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_async_db_dependency)
+        request: BulkScrapeRequest,
+        background_tasks: BackgroundTasks,
+        db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Create multiple scraping jobs in bulk
@@ -340,12 +341,12 @@ async def create_bulk_scrape_jobs(
         batch_id = f"batch_{str(uuid.uuid4())}"
         job_ids = []
         jobs_data = []
-        
+
         # Create job records in database (but don't commit yet)
         for job_request in request.jobs:
             job_id = f"job_{str(uuid.uuid4())}"
             job_ids.append(job_id)
-            
+
             # Prepare job data
             job_data = {
                 'job_id': job_id,
@@ -362,7 +363,7 @@ async def create_bulk_scrape_jobs(
                 'callback_url': str(job_request.callback_url) if job_request.callback_url else None
             }
             jobs_data.append(job_data)
-            
+
             # Create job record in database
             job = Job(
                 task_id=job_id,
@@ -378,9 +379,9 @@ async def create_bulk_scrape_jobs(
                 priority=job_request.priority,
                 created_at=datetime.now(timezone.utc)
             )
-            
+
             db.add(job)
-        
+
         # Try to enqueue all jobs with proper cleanup on failure
         enqueued_job_ids = []
         try:
@@ -397,14 +398,14 @@ async def create_bulk_scrape_jobs(
                 except Exception:
                     # Log cleanup failure but don't fail the operation
                     pass
-            
+
             # Rollback database transaction
             await db.rollback()
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to enqueue batch jobs: {str(enqueue_error)}"
             )
-        
+
         return BulkScrapeResponse(
             batch_id=batch_id,
             job_ids=job_ids,
@@ -412,7 +413,7 @@ async def create_bulk_scrape_jobs(
             status="queued",
             created_at=datetime.now(timezone.utc)
         )
-        
+
     except HTTPException:
         # Re-raise HTTPExceptions to preserve status code and detail
         raise

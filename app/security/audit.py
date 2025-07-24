@@ -5,16 +5,16 @@ Provides comprehensive audit logging for security events, API access,
 authentication attempts, and other security-relevant activities.
 """
 
+import hashlib
 import json
+import logging
 import time
+from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, Dict, Any, List
-from dataclasses import dataclass, asdict
-import logging
-import hashlib
+from typing import Optional, Dict, Any
 
-from fastapi import Request, Response
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
@@ -62,7 +62,7 @@ class AuditEvent:
     details: Dict[str, Any]
     request_id: Optional[str]
     api_key_id: Optional[str]
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for logging"""
         data = asdict(self)
@@ -74,12 +74,12 @@ class AuditEvent:
 
 class AuditLogger:
     """Centralized audit logging system"""
-    
+
     def __init__(self):
         self.encryption = get_encryption_instance()
         self.audit_logger = logging.getLogger("audit")
         self._setup_audit_logger()
-    
+
     def _setup_audit_logger(self):
         """Setup dedicated audit logger"""
         # Create audit-specific handler if not exists
@@ -91,45 +91,45 @@ class AuditLogger:
             handler.setFormatter(formatter)
             self.audit_logger.addHandler(handler)
             self.audit_logger.setLevel(logging.INFO)
-    
+
     def log_event(self, event: AuditEvent):
         """Log an audit event"""
         if not settings.audit_logging_enabled:
             return
-        
+
         try:
             # Anonymize sensitive data
             event_data = anonymize_log_data(event.to_dict())
-            
+
             # Add integrity hash
             event_data['integrity_hash'] = self._calculate_integrity_hash(event_data)
-            
+
             # Log the event
             log_message = f"AUDIT: {event.event_type.value} - {event.message}"
-            
+
             if event.severity in [AuditSeverity.HIGH, AuditSeverity.CRITICAL]:
                 self.audit_logger.error(log_message, extra={"audit_data": event_data})
             elif event.severity == AuditSeverity.MEDIUM:
                 self.audit_logger.warning(log_message, extra={"audit_data": event_data})
             else:
                 self.audit_logger.info(log_message, extra={"audit_data": event_data})
-        
+
         except Exception as e:
             logger.error(f"Failed to log audit event: {e}")
-    
+
     def _calculate_integrity_hash(self, event_data: Dict[str, Any]) -> str:
         """Calculate integrity hash for audit event"""
         # Create a deterministic string representation
         sorted_data = json.dumps(event_data, sort_keys=True, default=str)
         return hashlib.sha256(sorted_data.encode()).hexdigest()
-    
+
     def log_authentication_success(
-        self,
-        user_id: str,
-        ip_address: str,
-        user_agent: str,
-        api_key_id: Optional[str] = None,
-        request_id: Optional[str] = None
+            self,
+            user_id: str,
+            ip_address: str,
+            user_agent: str,
+            api_key_id: Optional[str] = None,
+            request_id: Optional[str] = None
     ):
         """Log successful authentication"""
         event = AuditEvent(
@@ -149,13 +149,13 @@ class AuditLogger:
             api_key_id=api_key_id
         )
         self.log_event(event)
-    
+
     def log_authentication_failure(
-        self,
-        ip_address: str,
-        user_agent: str,
-        reason: str,
-        request_id: Optional[str] = None
+            self,
+            ip_address: str,
+            user_agent: str,
+            reason: str,
+            request_id: Optional[str] = None
     ):
         """Log failed authentication"""
         event = AuditEvent(
@@ -175,18 +175,18 @@ class AuditLogger:
             api_key_id=None
         )
         self.log_event(event)
-    
+
     def log_api_access(
-        self,
-        endpoint: str,
-        method: str,
-        status_code: int,
-        ip_address: str,
-        user_agent: str,
-        user_id: Optional[str] = None,
-        api_key_id: Optional[str] = None,
-        request_id: Optional[str] = None,
-        response_time: Optional[float] = None
+            self,
+            endpoint: str,
+            method: str,
+            status_code: int,
+            ip_address: str,
+            user_agent: str,
+            user_id: Optional[str] = None,
+            api_key_id: Optional[str] = None,
+            request_id: Optional[str] = None,
+            response_time: Optional[float] = None
     ):
         """Log API access"""
         severity = AuditSeverity.LOW
@@ -194,7 +194,7 @@ class AuditLogger:
             severity = AuditSeverity.MEDIUM
         if status_code >= 500:
             severity = AuditSeverity.HIGH
-        
+
         event = AuditEvent(
             event_type=AuditEventType.API_ACCESS,
             severity=severity,
@@ -215,15 +215,15 @@ class AuditLogger:
             api_key_id=api_key_id
         )
         self.log_event(event)
-    
+
     def log_security_violation(
-        self,
-        violation_type: str,
-        ip_address: str,
-        user_agent: str,
-        endpoint: str,
-        details: Dict[str, Any],
-        request_id: Optional[str] = None
+            self,
+            violation_type: str,
+            ip_address: str,
+            user_agent: str,
+            endpoint: str,
+            details: Dict[str, Any],
+            request_id: Optional[str] = None
     ):
         """Log security violation"""
         event = AuditEvent(
@@ -243,14 +243,14 @@ class AuditLogger:
             api_key_id=None
         )
         self.log_event(event)
-    
+
     def log_rate_limit_exceeded(
-        self,
-        ip_address: str,
-        user_agent: str,
-        endpoint: str,
-        limit_type: str,
-        request_id: Optional[str] = None
+            self,
+            ip_address: str,
+            user_agent: str,
+            endpoint: str,
+            limit_type: str,
+            request_id: Optional[str] = None
     ):
         """Log rate limit exceeded"""
         event = AuditEvent(
@@ -274,32 +274,32 @@ class AuditLogger:
 
 class AuditMiddleware(BaseHTTPMiddleware):
     """Middleware for automatic audit logging of requests"""
-    
+
     def __init__(self, app):
         super().__init__(app)
         self.audit_logger = AuditLogger()
-    
+
     async def dispatch(self, request: Request, call_next):
         """Log request and response"""
         start_time = time.time()
         request_id = request.headers.get("X-Request-ID", "unknown")
-        
+
         # Extract request info
         ip_address = self._get_client_ip(request)
         user_agent = request.headers.get("user-agent", "unknown")
         endpoint = str(request.url.path)
         method = request.method
-        
+
         # Process request
         response = await call_next(request)
-        
+
         # Calculate response time
         response_time = time.time() - start_time
-        
+
         # Extract user info if available
         user_id = getattr(request.state, 'user_id', None)
         api_key_id = getattr(request.state, 'api_key_id', None)
-        
+
         # Log API access
         self.audit_logger.log_api_access(
             endpoint=endpoint,
@@ -312,23 +312,23 @@ class AuditMiddleware(BaseHTTPMiddleware):
             request_id=request_id,
             response_time=response_time
         )
-        
+
         return response
-    
+
     def _get_client_ip(self, request: Request) -> str:
         """Extract client IP address"""
         # Check for forwarded headers first
         forwarded_for = request.headers.get("x-forwarded-for")
         if forwarded_for:
             return forwarded_for.split(",")[0].strip()
-        
+
         real_ip = request.headers.get("x-real-ip")
         if real_ip:
             return real_ip
-        
+
         if request.client:
             return request.client.host
-        
+
         return "unknown"
 
 
@@ -355,7 +355,8 @@ def log_authentication_failure(ip_address: str, user_agent: str, reason: str, **
     get_audit_logger().log_authentication_failure(ip_address, user_agent, reason, **kwargs)
 
 
-def log_security_violation(violation_type: str, ip_address: str, user_agent: str, endpoint: str, details: Dict[str, Any], **kwargs):
+def log_security_violation(violation_type: str, ip_address: str, user_agent: str, endpoint: str,
+                           details: Dict[str, Any], **kwargs):
     """Log security violation"""
     get_audit_logger().log_security_violation(violation_type, ip_address, user_agent, endpoint, details, **kwargs)
 
