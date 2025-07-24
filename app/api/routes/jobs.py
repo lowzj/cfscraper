@@ -4,7 +4,7 @@ Job management endpoints with async optimization
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import and_, or_, desc, asc, select, func
+from sqlalchemy import and_, or_, desc, asc, select, func, update
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 import uuid
@@ -138,7 +138,7 @@ async def list_jobs(
 @router.post("/search", response_model=JobListResponse)
 async def search_jobs(
     request: JobSearchRequest,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Search jobs with advanced filtering
@@ -154,43 +154,43 @@ async def search_jobs(
         JobListResponse with search results
     """
     try:
-        # Build query
-        query = db.query(Job)
-        
+        # Build async query
+        query = select(Job)
+
         # Apply text search
         if request.query:
-            query = query.filter(
+            query = query.where(
                 or_(
                     Job.url.contains(request.query),
                     Job.task_id.contains(request.query),
                     Job.progress_message.contains(request.query)
                 )
             )
-        
+
         # Apply filters
         if request.status:
-            query = query.filter(Job.status.in_(request.status))
-        
+            query = query.where(Job.status.in_(request.status))
+
         if request.scraper_type:
-            query = query.filter(Job.scraper_type.in_(request.scraper_type))
+            query = query.where(Job.scraper_type.in_(request.scraper_type))
         
         if request.date_from:
             try:
                 date_from = datetime.fromisoformat(request.date_from.replace('Z', '+00:00'))
-                query = query.filter(Job.created_at >= date_from)
+                query = query.where(Job.created_at >= date_from)
             except ValueError:
                 raise HTTPException(
-                    status_code=400, 
+                    status_code=400,
                     detail="Invalid date_from format. Use ISO format."
                 )
-        
+
         if request.date_to:
             try:
                 date_to = datetime.fromisoformat(request.date_to.replace('Z', '+00:00'))
-                query = query.filter(Job.created_at <= date_to)
+                query = query.where(Job.created_at <= date_to)
             except ValueError:
                 raise HTTPException(
-                    status_code=400, 
+                    status_code=400,
                     detail="Invalid date_to format. Use ISO format."
                 )
         
@@ -200,13 +200,22 @@ async def search_jobs(
             query = query.order_by(asc(sort_field))
         else:
             query = query.order_by(desc(sort_field))
-        
-        # Get total count
-        total = query.count()
-        
-        # Apply pagination
+
+        # Get total count and jobs concurrently
+        count_query = select(func.count()).select_from(query.subquery())
+
+        # Execute count and paginated query concurrently
         offset = (request.page - 1) * request.page_size
-        jobs = query.offset(offset).limit(request.page_size).all()
+        paginated_query = query.offset(offset).limit(request.page_size)
+
+        # Use asyncio.gather for concurrent execution
+        count_result, jobs_result = await asyncio.gather(
+            db.execute(count_query),
+            db.execute(paginated_query)
+        )
+
+        total = count_result.scalar()
+        jobs = jobs_result.scalars().all()
         
         # Convert to response format
         job_responses = []
@@ -236,7 +245,7 @@ async def search_jobs(
 @router.post("/bulk/cancel")
 async def cancel_bulk_jobs(
     job_ids: List[str],
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Cancel multiple jobs in bulk
@@ -258,7 +267,8 @@ async def cancel_bulk_jobs(
             )
         
         # Get jobs from database
-        jobs = db.query(Job).filter(Job.task_id.in_(job_ids)).all()
+        jobs_result = await db.execute(select(Job).where(Job.task_id.in_(job_ids)))
+        jobs = jobs_result.scalars().all()
         
         if not jobs:
             raise HTTPException(status_code=404, detail="No jobs found")
@@ -273,8 +283,11 @@ async def cancel_bulk_jobs(
                     await get_job_queue().update_job_status(job.task_id, JobStatus.CANCELLED)
                     
                     # Update job in database
-                    job.status = JobStatus.CANCELLED
-                    job.completed_at = datetime.now(timezone.utc)
+                    update_stmt = update(Job).where(Job.task_id == job.task_id).values(
+                        status=JobStatus.CANCELLED,
+                        completed_at=datetime.now(timezone.utc)
+                    )
+                    await db.execute(update_stmt)
                     cancelled_jobs.append(job.task_id)
                     
                 except Exception as e:
@@ -288,7 +301,7 @@ async def cancel_bulk_jobs(
                     'error': f'Cannot cancel job with status: {job.status}'
                 })
         
-        db.commit()
+        await db.commit()
         
         return {
             'message': f'Bulk cancel operation completed',
@@ -302,7 +315,7 @@ async def cancel_bulk_jobs(
     except HTTPException:
         raise
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=500, 
             detail=f"Failed to cancel bulk jobs: {str(e)}"
@@ -313,7 +326,7 @@ async def cancel_bulk_jobs(
 async def delete_bulk_jobs(
     job_ids: List[str],
     force: bool = Query(False, description="Force delete even if running"),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Delete multiple jobs in bulk
@@ -337,7 +350,8 @@ async def delete_bulk_jobs(
             )
         
         # Get jobs from database
-        jobs = db.query(Job).filter(Job.task_id.in_(job_ids)).all()
+        jobs_result = await db.execute(select(Job).where(Job.task_id.in_(job_ids)))
+        jobs = jobs_result.scalars().all()
         
         if not jobs:
             raise HTTPException(status_code=404, detail="No jobs found")
@@ -366,7 +380,7 @@ async def delete_bulk_jobs(
                     'error': f'Cannot delete job with status: {job.status}. Use force=true to override.'
                 })
         
-        db.commit()
+        await db.commit()
         
         return {
             'message': f'Bulk delete operation completed',
@@ -380,7 +394,7 @@ async def delete_bulk_jobs(
     except HTTPException:
         raise
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=500, 
             detail=f"Failed to delete bulk jobs: {str(e)}"
@@ -390,7 +404,7 @@ async def delete_bulk_jobs(
 @router.get("/stats")
 async def get_job_stats(
     days: int = Query(7, ge=1, le=365, description="Number of days to include in stats"),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Get job statistics
@@ -410,10 +424,13 @@ async def get_job_stats(
         start_date = end_date - timedelta(days=days)
         
         # Get jobs in date range
-        jobs = db.query(Job).filter(
-            Job.created_at >= start_date,
-            Job.created_at <= end_date
-        ).all()
+        jobs_result = await db.execute(
+            select(Job).where(
+                Job.created_at >= start_date,
+                Job.created_at <= end_date
+            )
+        )
+        jobs = jobs_result.scalars().all()
         
         # Calculate statistics
         stats = {

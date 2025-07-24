@@ -121,35 +121,34 @@ async def health_check():
     Returns 200 for healthy, 503 for unhealthy.
     """
     from sqlalchemy import text
-    from app.core.database import SessionLocal
+    from app.database.connection import connection_manager
     from app.utils.queue import create_job_queue
     import time
 
     try:
         # Check database connectivity
-        db = SessionLocal()
-        try:
-            result = db.execute(text("SELECT 1")).fetchone()
-            if not result:
+        async with connection_manager.get_async_session() as db:
+            try:
+                result = await db.execute(text("SELECT 1"))
+                row = result.fetchone()
+                if not row:
+                    return JSONResponse(
+                        status_code=503,
+                        content={
+                            "status": "unhealthy",
+                            "error": "Database connection failed",
+                            "service": "cfscraper-api"
+                        }
+                    )
+            except Exception as e:
                 return JSONResponse(
                     status_code=503,
                     content={
                         "status": "unhealthy",
-                        "error": "Database connection failed",
+                        "error": f"Database error: {str(e)}",
                         "service": "cfscraper-api"
                     }
                 )
-        except Exception as e:
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "status": "unhealthy",
-                    "error": f"Database error: {str(e)}",
-                    "service": "cfscraper-api"
-                }
-            )
-        finally:
-            db.close()
 
         # Check Redis/Queue connectivity (if not using in-memory queue)
         if not settings.use_in_memory_queue:
