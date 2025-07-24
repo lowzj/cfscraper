@@ -3,13 +3,13 @@ Health check and monitoring endpoints
 """
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Dict, Any
 import time
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from app.core.database import get_db
+from app.core.database import get_async_db_dependency
 from app.core.config import settings
 from app.models.job import Job, JobStatus
 from app.models.responses import HealthCheckResponse, DetailedHealthCheckResponse, MetricsResponse
@@ -58,7 +58,7 @@ async def health_check():
 
 
 @router.get("/detailed", response_model=DetailedHealthCheckResponse)
-async def detailed_health_check(db: Session = Depends(get_db)):
+async def detailed_health_check(db: AsyncSession = Depends(get_async_db_dependency)):
     """
     Detailed health check endpoint
     
@@ -77,16 +77,17 @@ async def detailed_health_check(db: Session = Depends(get_db)):
         # Check database connection
         try:
             start_time = time.time()
-            result = db.execute(text("SELECT 1")).fetchone()
+            result = await db.execute(text("SELECT 1"))
+            row = result.fetchone()
             db_response_time = time.time() - start_time
             
             components["database"] = {
-                "status": "healthy" if result else "unhealthy",
+                "status": "healthy" if row else "unhealthy",
                 "response_time": db_response_time,
                 "last_check": datetime.now(timezone.utc).isoformat()
             }
             
-            if not result:
+            if not row:
                 overall_status = "unhealthy"
                 
         except Exception as e:
@@ -156,18 +157,30 @@ async def detailed_health_check(db: Session = Depends(get_db)):
         
         # Get job metrics
         try:
+            from sqlalchemy import select, func
+            
             # Get job counts
-            total_jobs = db.query(Job).count()
-            active_jobs = db.query(Job).filter(Job.status == JobStatus.RUNNING).count()
-            completed_jobs = db.query(Job).filter(Job.status == JobStatus.COMPLETED).count()
-            failed_jobs = db.query(Job).filter(Job.status == JobStatus.FAILED).count()
+            total_jobs_result = await db.execute(select(func.count()).select_from(Job))
+            total_jobs = total_jobs_result.scalar()
+            
+            active_jobs_result = await db.execute(select(func.count()).select_from(Job).where(Job.status == JobStatus.RUNNING))
+            active_jobs = active_jobs_result.scalar()
+            
+            completed_jobs_result = await db.execute(select(func.count()).select_from(Job).where(Job.status == JobStatus.COMPLETED))
+            completed_jobs = completed_jobs_result.scalar()
+            
+            failed_jobs_result = await db.execute(select(func.count()).select_from(Job).where(Job.status == JobStatus.FAILED))
+            failed_jobs = failed_jobs_result.scalar()
             
             # Get recent jobs for response time calculation
-            recent_jobs = db.query(Job).filter(
-                Job.completed_at >= datetime.now(timezone.utc) - timedelta(hours=1),
-                Job.status == JobStatus.COMPLETED,
-                Job.result.isnot(None)
-            ).all()
+            recent_jobs_result = await db.execute(
+                select(Job).where(
+                    Job.completed_at >= datetime.now(timezone.utc) - timedelta(hours=1),
+                    Job.status == JobStatus.COMPLETED,
+                    Job.result.isnot(None)
+                )
+            )
+            recent_jobs = recent_jobs_result.scalars().all()
             
             avg_response_time = 0
             if recent_jobs:
@@ -210,7 +223,7 @@ async def detailed_health_check(db: Session = Depends(get_db)):
 
 
 @router.get("/metrics", response_model=MetricsResponse)
-async def get_metrics(db: Session = Depends(get_db)):
+async def get_metrics(db: AsyncSession = Depends(get_async_db_dependency)):
     """
     Get system and application metrics
     
@@ -221,18 +234,24 @@ async def get_metrics(db: Session = Depends(get_db)):
         MetricsResponse with detailed metrics
     """
     try:
+        from sqlalchemy import select, func
+        
         job_queue = get_job_queue()
         
         # Job statistics
         jobs_stats = {}
         for status in JobStatus:
-            jobs_stats[status.value] = db.query(Job).filter(Job.status == status).count()
+            result = await db.execute(select(func.count()).select_from(Job).where(Job.status == status))
+            jobs_stats[status.value] = result.scalar()
         
         # Performance metrics
-        completed_jobs = db.query(Job).filter(
-            Job.status == JobStatus.COMPLETED,
-            Job.completed_at >= datetime.now(timezone.utc) - timedelta(hours=24)
-        ).all()
+        completed_jobs_result = await db.execute(
+            select(Job).where(
+                Job.status == JobStatus.COMPLETED,
+                Job.completed_at >= datetime.now(timezone.utc) - timedelta(hours=24)
+            )
+        )
+        completed_jobs = completed_jobs_result.scalars().all()
         
         performance_metrics = {
             "average_response_time": 0,
@@ -257,9 +276,12 @@ async def get_metrics(db: Session = Depends(get_db)):
                     else (response_times[n // 2 - 1] + response_times[n // 2]) / 2
                 )
             
-            total_jobs_24h = db.query(Job).filter(
-                Job.created_at >= datetime.now(timezone.utc) - timedelta(hours=24)
-            ).count()
+            total_jobs_24h_result = await db.execute(
+                select(func.count()).select_from(Job).where(
+                    Job.created_at >= datetime.now(timezone.utc) - timedelta(hours=24)
+                )
+            )
+            total_jobs_24h = total_jobs_24h_result.scalar()
             
             if total_jobs_24h > 0:
                 performance_metrics["success_rate"] = len(completed_jobs) / total_jobs_24h
@@ -297,10 +319,13 @@ async def get_metrics(db: Session = Depends(get_db)):
             hour_start = datetime.now(timezone.utc) - timedelta(hours=i+1)
             hour_end = datetime.now(timezone.utc) - timedelta(hours=i)
             
-            count = db.query(Job).filter(
-                Job.created_at >= hour_start,
-                Job.created_at < hour_end
-            ).count()
+            result = await db.execute(
+                select(func.count()).select_from(Job).where(
+                    Job.created_at >= hour_start,
+                    Job.created_at < hour_end
+                )
+            )
+            count = result.scalar()
             
             hourly_stats[hour_start.strftime('%Y-%m-%dT%H:00:00Z')] = count
         
@@ -310,10 +335,13 @@ async def get_metrics(db: Session = Depends(get_db)):
             day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
             day_end = day_start + timedelta(days=1)
             
-            count = db.query(Job).filter(
-                Job.created_at >= day_start,
-                Job.created_at < day_end
-            ).count()
+            result = await db.execute(
+                select(func.count()).select_from(Job).where(
+                    Job.created_at >= day_start,
+                    Job.created_at < day_end
+                )
+            )
+            count = result.scalar()
             
             daily_stats[day_start.strftime('%Y-%m-%d')] = count
         
@@ -334,7 +362,7 @@ async def get_metrics(db: Session = Depends(get_db)):
 
 
 @router.get("/status")
-async def get_service_status(db: Session = Depends(get_db)):
+async def get_service_status(db: AsyncSession = Depends(get_async_db_dependency)):
     """
     Get service status summary
     
@@ -345,6 +373,8 @@ async def get_service_status(db: Session = Depends(get_db)):
         Service status summary
     """
     try:
+        from sqlalchemy import select, func
+        
         job_queue = get_job_queue()
         
         # Basic service info
@@ -354,13 +384,19 @@ async def get_service_status(db: Session = Depends(get_db)):
         queue_size = await job_queue.get_queue_size()
         
         # Get job counts
-        total_jobs = db.query(Job).count()
-        running_jobs = db.query(Job).filter(Job.status == JobStatus.RUNNING).count()
+        total_jobs_result = await db.execute(select(func.count()).select_from(Job))
+        total_jobs = total_jobs_result.scalar()
+        
+        running_jobs_result = await db.execute(select(func.count()).select_from(Job).where(Job.status == JobStatus.RUNNING))
+        running_jobs = running_jobs_result.scalar()
         
         # Get recent activity
-        recent_jobs = db.query(Job).filter(
-            Job.created_at >= datetime.now(timezone.utc) - timedelta(hours=1)
-        ).count()
+        recent_jobs_result = await db.execute(
+            select(func.count()).select_from(Job).where(
+                Job.created_at >= datetime.now(timezone.utc) - timedelta(hours=1)
+            )
+        )
+        recent_jobs = recent_jobs_result.scalar()
         
         return {
             "service": "CFScraper API",

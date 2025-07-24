@@ -2,7 +2,8 @@
 Common utilities for API routes
 """
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from typing import Optional
 
 from app.models.job import Job, JobStatus
@@ -11,9 +12,9 @@ from app.utils.queue import JobQueue, create_job_queue
 
 # Try to import executor, but handle missing dependencies
 try:
-    from app.utils.executor import JobExecutor
+    from app.utils.executor import AsyncJobExecutor
     job_queue = create_job_queue()
-    job_executor = JobExecutor(job_queue)
+    job_executor = AsyncJobExecutor(job_queue)
 except Exception:
     job_executor = None
     job_queue = create_job_queue()
@@ -24,7 +25,7 @@ def get_job_queue() -> JobQueue:
     return job_queue
 
 
-def get_job_executor() -> Optional[JobExecutor]:
+def get_job_executor() -> Optional[AsyncJobExecutor]:
     """Get the global job executor instance"""
     return job_executor
 
@@ -92,13 +93,13 @@ def build_job_status_response(job: Job, queue_status: Optional[JobStatus] = None
     )
 
 
-def get_job_by_id(job_id: str, db: Session) -> Job:
+async def get_job_by_id(job_id: str, db: AsyncSession) -> Job:
     """
     Get a job by ID from the database
     
     Args:
         job_id: The job ID to look up
-        db: Database session
+        db: Async database session
         
     Returns:
         Job object
@@ -106,7 +107,8 @@ def get_job_by_id(job_id: str, db: Session) -> Job:
     Raises:
         HTTPException: If job not found
     """
-    job = db.query(Job).filter(Job.task_id == job_id).first()
+    result = await db.execute(select(Job).where(Job.task_id == job_id))
+    job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job

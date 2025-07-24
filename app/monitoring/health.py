@@ -11,9 +11,8 @@ from dataclasses import dataclass, asdict
 
 import httpx
 from sqlalchemy import text
-from sqlalchemy.orm import Session
 
-from app.core.database import SessionLocal
+from app.database.connection import connection_manager
 from app.core.config import settings
 from app.utils.queue import create_job_queue
 
@@ -59,27 +58,34 @@ class HealthChecker:
         start_time = time.time()
         
         try:
-            db = SessionLocal()
-            try:
-                result = db.execute(text("SELECT 1")).fetchone()
-                response_time = time.time() - start_time
-                
-                if result:
-                    return HealthCheckResult(
-                        status=ComponentStatus.HEALTHY,
-                        response_time=response_time,
-                        details={"connection": "active"},
-                        last_check=datetime.now(timezone.utc)
-                    )
-                else:
+            async with connection_manager.get_async_session() as db:
+                try:
+                    result = await db.execute(text("SELECT 1"))
+                    row = result.fetchone()
+                    response_time = time.time() - start_time
+                    
+                    if row:
+                        return HealthCheckResult(
+                            status=ComponentStatus.HEALTHY,
+                            response_time=response_time,
+                            details={"connection": "active"},
+                            last_check=datetime.now(timezone.utc)
+                        )
+                    else:
+                        return HealthCheckResult(
+                            status=ComponentStatus.UNHEALTHY,
+                            response_time=response_time,
+                            error="Database query returned no result",
+                            last_check=datetime.now(timezone.utc)
+                        )
+                except Exception as e:
+                    response_time = time.time() - start_time
                     return HealthCheckResult(
                         status=ComponentStatus.UNHEALTHY,
                         response_time=response_time,
-                        error="Database query returned no result",
+                        error=str(e),
                         last_check=datetime.now(timezone.utc)
                     )
-            finally:
-                db.close()
                 
         except Exception as e:
             response_time = time.time() - start_time

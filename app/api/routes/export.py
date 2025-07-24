@@ -12,9 +12,9 @@ from app.utils.data_export import (
     get_export_manager
 )
 from app.models.job import Job
-from app.core.database import SessionLocal
-from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from app.core.database import get_async_db_dependency
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_, select
 
 router = APIRouter()
 
@@ -70,17 +70,8 @@ class ExportResponse(BaseModel):
     download_url: Optional[str] = None
 
 
-def get_db():
-    """Get database session"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 async def prepare_export_data(
-    db: Session,
+    db: AsyncSession,
     job_ids: Optional[List[str]] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
@@ -90,20 +81,21 @@ async def prepare_export_data(
     """Prepare data for export from database"""
     
     # Build query
-    query = db.query(Job)
+    query = select(Job)
     
     # Apply filters
     if job_ids:
-        query = query.filter(Job.task_id.in_(job_ids))
+        query = query.where(Job.task_id.in_(job_ids))
     
     if date_from:
-        query = query.filter(Job.created_at >= date_from)
+        query = query.where(Job.created_at >= date_from)
     
     if date_to:
-        query = query.filter(Job.created_at <= date_to)
+        query = query.where(Job.created_at <= date_to)
     
     # Execute query
-    jobs = query.all()
+    result = await db.execute(query)
+    jobs = result.scalars().all()
     
     # Transform data for export
     export_data = []
@@ -153,7 +145,7 @@ async def prepare_export_data(
 async def export_data(
     request: ExportRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db_dependency)
 ):
     """
     Export scraping job data in various formats
